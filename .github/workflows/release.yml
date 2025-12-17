@@ -13,6 +13,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Set version from tag
+        run: |
+          $VERSION = "${{ github.ref_name }}".TrimStart('v')
+          $JSON = Get-Content package.json | ConvertFrom-Json
+          $JSON.version = $VERSION
+          $JSON | ConvertTo-Json -Depth 10 | Set-Content package.json
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -23,6 +30,8 @@ jobs:
       
       - name: Build Windows
         run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -37,6 +46,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Set version from tag
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          npm version $VERSION --no-git-tag-version
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,6 +62,8 @@ jobs:
       
       - name: Build Linux
         run: npm run build -- --linux deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
