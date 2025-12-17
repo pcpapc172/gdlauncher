@@ -27,6 +27,7 @@
     "semver": "^7.5.4"
   },
   "build": {
+    "publish": null,
     "appId": "com.pcpapc172.gdlauncher",
     "productName": "GDLauncher",
     "directories": {
