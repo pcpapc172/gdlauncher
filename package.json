@@ -1,63 +1,96 @@
-{
-  "name": "gd-instance-launcher",
-  "version": "1.2.1",
-  "description": "Game Instance Launcher for Geometry Dash",
-  "homepage": "https://github.com/pcpapc172/gd-launcher",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "build": "electron-builder"
-  },
-  "author": {
-    "name": "pcpapc172",
-    "email": "apkme11e@gmail.com"
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1"
-  },
-  "dependencies": {
-    "axios": "^1.6.2",
-    "decompress": "^4.2.1",
-    "decompress-unzip": "^4.0.1",
-    "easydl": "^1.2.0",
-    "plist": "^3.1.0",
-    "ps-list": "7.2.0",
-    "semver": "^7.5.4"
-  },
-  "build": {
-    "publish": null,
-    "appId": "com.pcpapc172.gdlauncher",
-    "productName": "GDLauncher",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "editor.js",
-      "main.js",
-      "preload.js",
-      "renderer.js",
-      "styles.css",
-      "index.html"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "icon.ico"
-    },
-    "linux": {
-      "target": [
-        "deb"
-      ],
-      "icon": "./",
-      "category": "Game",
-      "maintainer": "pcpapc172 <apkme11e@gmail.com>"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
-    }
-  }
-}
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set version from Git tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Using version: $TAG"
+          npm version "$TAG" --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows
+        run: npm run build
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/*.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set version from Git tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Using version: $TAG"
+          npm version "$TAG" --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Linux
+        run: npm run build -- --linux deb
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: dist/*.deb
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
