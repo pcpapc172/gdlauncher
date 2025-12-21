@@ -8,22 +8,29 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
+
+      - name: Set version from Git tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Using version: $TAG"
+          npm version "$TAG" --no-git-tag-version
+
       - name: Install dependencies
         run: npm install
-      
+
       - name: Build Windows
         run: npm run build
-      
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -32,22 +39,28 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
+
+      - name: Set version from Git tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "Using version: $TAG"
+          npm version "$TAG" --no-git-tag-version
+
       - name: Install dependencies
         run: npm install
-      
+
       - name: Build Linux
         run: npm run build -- --linux deb
-      
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -59,24 +72,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: windows-build
-          path: ./artifacts
-      
+          path: artifacts
+
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
           name: linux-build
-          path: ./artifacts
-      
-      - name: Create Release
+          path: artifacts
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ./artifacts/*
+          files: artifacts/*
           draft: false
           prerelease: false
         env:
