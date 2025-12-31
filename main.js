@@ -45,9 +45,9 @@ app.whenReady().then(async () => {
     createWindow();
 
     setTimeout(checkForUpdates, 3000);
-    
-    app.on('activate', () => { 
-        if (BrowserWindow.getAllWindows().length === 0) createWindow(); 
+
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 });
 
@@ -57,8 +57,8 @@ app.on('window-all-closed', () => {
 });
 
 /* ============================
-   FEDORA HELPERS
-============================ */
+ *  FEDORA HELPERS
+ = *=========================== */
 
 function isFedora() {
     if (!isLinux) return false;
@@ -82,8 +82,8 @@ function isRpmOstree() {
 async function installRpm(rpmPath) {
     return new Promise((resolve, reject) => {
         const args = isRpmOstree()
-            ? ['rpm-ostree', 'install', rpmPath]
-            : ['dnf', 'install', '-y', rpmPath];
+        ? ['rpm-ostree', 'install', rpmPath]
+        : ['dnf', 'install', '-y', rpmPath];
 
         const child = spawn('pkexec', args, { stdio: 'inherit' });
 
@@ -95,8 +95,8 @@ async function installRpm(rpmPath) {
 }
 
 /* ============================
-   WINDOW
-============================ */
+ *  WINDOW
+ = *=========================== */
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -106,8 +106,8 @@ function createWindow() {
         minHeight: 500,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false
+                                   contextIsolation: true,
+                                   nodeIntegration: false
         }
     });
 
@@ -115,8 +115,8 @@ function createWindow() {
 }
 
 /* ============================
-   IPC HANDLERS
-============================ */
+ *  IPC HANDLERS
+ = *=========================== */
 
 function setupIpcHandlers() {
     // Editor
@@ -142,7 +142,7 @@ function setupIpcHandlers() {
     ipcMain.handle('create-instance', async (event, data) => createInstance(data));
     ipcMain.handle('edit-instance', async (event, originalName, data) => editInstance(originalName, data));
     ipcMain.handle('delete-instance', async (event, name) => deleteInstance(name));
-    
+
     // Versions
     ipcMain.handle('get-versions', async () => getVersions());
     ipcMain.handle('get-versions-with-sizes', async () => getVersionsWithSizes());
@@ -183,39 +183,39 @@ function setupIpcHandlers() {
             return { executable: 'GeometryDash.exe', steam_emulator: 'SmartSteamEmu.exe' };
         }
     });
-    
+
     // Launch & Game Process
     ipcMain.on('launch-game', async (event, instanceName) => launchGame(instanceName));
     ipcMain.on('terminate-game', () => terminateGame());
     ipcMain.handle('is-game-running', () => isGameRunning);
     ipcMain.handle('handle-first-run-import', async () => await prepareLocalAppData(await getLinuxAppDataPath('GeometryDash'), path.join(BASE_DIR, 'info.json'), true));
-    
+
     // Backup & Restore
     ipcMain.handle('create-backup', async (event, instanceName) => createBackup(instanceName));
     ipcMain.handle('get-backups', async (event, instanceName) => getBackups(instanceName));
     ipcMain.handle('restore-backup', async (event, instanceName, backupFileName) => restoreBackup(instanceName, backupFileName));
     ipcMain.handle('delete-backup', async (event, instanceName, backupFileName) => deleteBackup(instanceName, backupFileName));
-    
+
     // Miscellaneous
     ipcMain.handle('open-folder', async (event, folderPath) => { await shell.openPath(folderPath); return { success: true }; });
     ipcMain.handle('show-item-in-folder', async (event, itemPath) => { shell.showItemInFolder(itemPath); return { success: true }; });
     ipcMain.handle('open-external', async (event, url) => { await shell.openExternal(url); return { success: true }; });
-    
+
     // Update System
     ipcMain.handle('get-app-version', () => app.getVersion());
     ipcMain.handle('check-for-updates', () => checkForUpdates(true));
 }
 
 /* ============================
-   UPDATE SYSTEM
-============================ */
+ *  UPDATE SYSTEM
+ = *=========================== */
 
 async function checkForUpdates(isManual = false) {
     try {
         // Fetch latest release from GitHub
         const { data } = await axios.get(
             'https://api.github.com/repos/pcpapc172/gdlauncher/releases/latest',
-            { 
+            {
                 timeout: 5000,
                 headers: {
                     'Accept': 'application/vnd.github+json',
@@ -225,9 +225,9 @@ async function checkForUpdates(isManual = false) {
         );
 
         // Extract version from tag_name (remove 'v' prefix if present)
-        const latestVersion = data.tag_name.startsWith('v') 
-            ? data.tag_name.substring(1) 
-            : data.tag_name;
+        const latestVersion = data.tag_name.startsWith('v')
+        ? data.tag_name.substring(1)
+        : data.tag_name;
 
         if (!semver.gt(latestVersion, app.getVersion())) {
             if (isManual) {
@@ -243,24 +243,24 @@ async function checkForUpdates(isManual = false) {
 
         // Find the appropriate asset for the platform
         let updateAsset = null;
-        
+
         if (isLinux) {
             // For Fedora, prefer RPM, otherwise DEB
             if (isFedora()) {
-                updateAsset = data.assets.find(asset => 
-                    asset.name.endsWith('.rpm')
+                updateAsset = data.assets.find(asset =>
+                asset.name.endsWith('.rpm')
                 );
             }
             // Fallback to .deb if no RPM or not Fedora
             if (!updateAsset) {
-                updateAsset = data.assets.find(asset => 
-                    asset.name.endsWith('.deb')
+                updateAsset = data.assets.find(asset =>
+                asset.name.endsWith('.deb')
                 );
             }
         } else {
             // Windows - look for .exe installer
-            updateAsset = data.assets.find(asset => 
-                asset.name.endsWith('.exe') || asset.name.endsWith('-Setup.exe')
+            updateAsset = data.assets.find(asset =>
+            asset.name.endsWith('.exe') || asset.name.endsWith('-Setup.exe')
             );
         }
 
@@ -280,14 +280,14 @@ async function checkForUpdates(isManual = false) {
             type: 'info',
             title: 'Update Available',
             message: `Version ${latestVersion} is available.\n\nCurrent: ${app.getVersion()}\nLatest: ${latestVersion}\n\nFile: ${updateAsset.name}`,
-            buttons: ['Download & Install', 'Cancel']
+                                                         buttons: ['Download & Install', 'Cancel']
         });
 
         if (response !== 0) return;
 
         const downloadPath = path.join(
             app.getPath('temp'),
-            updateAsset.name
+                                       updateAsset.name
         );
 
         mainWindow.webContents.send('launch-status', 'Downloading update...');
@@ -338,8 +338,8 @@ async function checkForUpdates(isManual = false) {
 }
 
 /* ============================
-   INSTANCES
-============================ */
+ *  INSTANCES
+ = *=========================== */
 
 async function getInstances() {
     try {
@@ -370,19 +370,19 @@ async function getInstances() {
 async function createInstance(data) {
     try {
         const { name, versionType, version, versionPath, saveFolderName, isGeodeCompatible, useMegaHack } = data;
-        
+
         if (!name) {
             return { success: false, error: 'Instance name is required' };
         }
-        
+
         const instancePath = path.join(INSTANCES_DIR, name);
-        
+
         if (await fs.access(instancePath).then(() => true).catch(() => false)) {
             return { success: false, error: 'Instance already exists' };
         }
-        
+
         await fs.mkdir(instancePath, { recursive: true });
-        
+
         const instanceData = {
             name,
             versionType: versionType || 'remote',
@@ -393,14 +393,14 @@ async function createInstance(data) {
             useMegaHack: useMegaHack !== undefined ? useMegaHack : true,
             creationDate: new Date().toISOString()
         };
-        
+
         await fs.writeFile(
             path.join(instancePath, 'instance.json'),
-            JSON.stringify(instanceData, null, 4)
+                           JSON.stringify(instanceData, null, 4)
         );
-        
+
         await ensureInstanceIntegrity(instancePath, instanceData.isGeodeCompatible, instanceData.useMegaHack);
-        
+
         return { success: true };
     } catch (error) {
         console.error('Error creating instance:', error);
@@ -412,14 +412,14 @@ async function editInstance(originalName, data) {
     try {
         const oldPath = path.join(INSTANCES_DIR, originalName);
         const newPath = path.join(INSTANCES_DIR, data.name);
-        
+
         if (originalName !== data.name) {
             if (await fs.access(newPath).then(() => true).catch(() => false)) {
                 return { success: false, error: 'An instance with that name already exists' };
             }
             await fs.rename(oldPath, newPath);
         }
-        
+
         const instanceData = {
             name: data.name,
             versionType: data.versionType,
@@ -430,14 +430,14 @@ async function editInstance(originalName, data) {
             useMegaHack: data.useMegaHack,
             creationDate: data.creationDate
         };
-        
+
         await fs.writeFile(
             path.join(newPath, 'instance.json'),
-            JSON.stringify(instanceData, null, 4)
+                           JSON.stringify(instanceData, null, 4)
         );
-        
+
         await ensureInstanceIntegrity(newPath, data.isGeodeCompatible, data.useMegaHack);
-        
+
         return { success: true };
     } catch (error) {
         console.error('Error editing instance:', error);
@@ -457,25 +457,25 @@ async function deleteInstance(name) {
 }
 
 /* ============================
-   VERSIONS
-============================ */
+ *  VERSIONS
+ = *=========================== */
 
 async function getVersions() {
     try {
         const versions = [];
         const categories = await fs.readdir(VERSIONS_DIR);
-        
+
         for (const category of categories) {
             const categoryPath = path.join(VERSIONS_DIR, category);
             const stat = await fs.stat(categoryPath);
-            
+
             if (stat.isDirectory()) {
                 const versionFolders = await fs.readdir(categoryPath);
-                
+
                 for (const versionFolder of versionFolders) {
                     const versionPath = path.join(categoryPath, versionFolder);
                     const versionStat = await fs.stat(versionPath);
-                    
+
                     if (versionStat.isDirectory()) {
                         versions.push({
                             id: `${category}/${versionFolder}`,
@@ -487,7 +487,7 @@ async function getVersions() {
                 }
             }
         }
-        
+
         return versions;
     } catch (error) {
         console.error('Error getting versions:', error);
@@ -499,7 +499,7 @@ async function getVersionsWithSizes() {
     try {
         const versions = await getVersions();
         const versionsWithSizes = [];
-        
+
         for (const version of versions) {
             const versionPath = path.join(VERSIONS_DIR, version.path);
             const size = await getItemSize(versionPath);
@@ -508,7 +508,7 @@ async function getVersionsWithSizes() {
                 size
             });
         }
-        
+
         return versionsWithSizes;
     } catch (error) {
         console.error('Error getting versions with sizes:', error);
@@ -531,7 +531,7 @@ async function calculateAllVersionSizes(versions) {
     for (const version of versions) {
         const versionPath = path.join(VERSIONS_DIR, version.path || `${version.category}/${version.version}`);
         const exists = await fs.access(versionPath).then(() => true).catch(() => false);
-        
+
         if (exists) {
             const size = await getItemSize(versionPath);
             results.push({ id: version.id, size });
@@ -544,17 +544,17 @@ async function downloadVersion(version) {
     try {
         mainWindow.webContents.send('download-start', { id: version.id });
         mainWindow.webContents.send('launch-status', `Downloading ${version.id}...`);
-        
+
         const downloadPath = path.join(app.getPath('temp'), `${version.id.replace('/', '_')}.zip`);
         const extractPath = path.join(VERSIONS_DIR, version.category, version.version);
-        
+
         await fs.mkdir(path.join(VERSIONS_DIR, version.category), { recursive: true });
-        
+
         const dl = new EasyDl(version.url, downloadPath, {
             connections: 6,
             maxRetry: 5
         });
-        
+
         dl.on('progress', ({ total }) => {
             if (total.percentage) {
                 mainWindow.webContents.send('download-progress', {
@@ -563,31 +563,31 @@ async function downloadVersion(version) {
                 });
             }
         });
-        
+
         await dl.wait();
-        
+
         mainWindow.webContents.send('launch-status', `Extracting ${version.id}...`);
-        
+
         if (await fs.access(extractPath).then(() => true).catch(() => false)) {
             await fs.rm(extractPath, { recursive: true, force: true });
         }
-        
+
         await decompress(downloadPath, extractPath, {
             plugins: [decompressUnzip()]
         });
-        
+
         await fs.unlink(downloadPath);
-        
+
         const versionJsonPath = path.join(extractPath, 'version.json');
         const versionJsonExists = await fs.access(versionJsonPath).then(() => true).catch(() => false);
-        
+
         if (!versionJsonExists) {
             await fs.writeFile(versionJsonPath, JSON.stringify({
                 executable: 'GeometryDash.exe',
                 steam_emulator: 'SmartSteamEmu.exe'
             }, null, 4));
         }
-        
+
         mainWindow.webContents.send('download-complete', { id: version.id, success: true });
     } catch (error) {
         mainWindow.webContents.send('download-complete', { id: version.id, success: false, message: error.message });
@@ -595,8 +595,8 @@ async function downloadVersion(version) {
 }
 
 /* ============================
-   GAME LAUNCH
-============================ */
+ *  GAME LAUNCH
+ = *=========================== */
 
 async function launchGame(instanceName) {
     if (isGameRunning) {
@@ -613,11 +613,11 @@ async function launchGame(instanceName) {
 
     try {
         mainWindow.webContents.send('launch-status', `Preparing to launch ${instanceName}...`);
-        
+
         const instancePath = path.join(INSTANCES_DIR, instanceName);
         const instanceJsonPath = path.join(instancePath, 'instance.json');
         const data = JSON.parse(await fs.readFile(instanceJsonPath, 'utf8'));
-        
+
         let versionPath;
         if (data.versionType === 'local') {
             versionPath = data.versionPath;
@@ -629,79 +629,79 @@ async function launchGame(instanceName) {
         } else {
             versionPath = path.join(VERSIONS_DIR, data.version);
         }
-        
+
         if (!(await fs.access(versionPath).then(() => true).catch(() => false))) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', 'Version not found');
             return;
         }
-        
+
         const versionJsonPath = path.join(versionPath, 'version.json');
         let versionConfig = { executable: 'GeometryDash.exe', steam_emulator: 'SmartSteamEmu.exe' };
         if (await fs.access(versionJsonPath).then(() => true).catch(() => false)) {
             versionConfig = JSON.parse(await fs.readFile(versionJsonPath, 'utf8'));
         }
-        
+
         const exePath = path.join(versionPath, versionConfig.executable);
         if (!(await fs.access(exePath).then(() => true).catch(() => false))) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', 'Game executable not found');
             return;
         }
-        
+
         const localAppDataPath = await getLinuxAppDataPath(data.saveFolderName);
         const infoJsonPath = path.join(BASE_DIR, 'info.json');
-        
+
         const prepResult = await prepareLocalAppData(localAppDataPath, infoJsonPath);
         if (!prepResult.success) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', prepResult.error || 'Failed to prepare save data');
             return;
         }
-        
+
         await ensureInstanceIntegrity(instancePath, data.isGeodeCompatible, data.useMegaHack);
-        
+
         const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
         await transferManagedItems(instancePath, localAppDataPath, managedItems, false);
-        
+
         await fs.writeFile(infoJsonPath, JSON.stringify({ instanceName }, null, 4));
-        
+
         mainWindow.webContents.send('launch-status', `Launching ${instanceName}...`);
-        
+
         let launchCommand;
         if (isLinux) {
             launchCommand = ['wine', exePath];
         } else {
             launchCommand = [exePath];
         }
-        
+
         gameProcess = spawn(launchCommand[0], launchCommand.slice(1), {
             cwd: versionPath,
             detached: false
         });
-        
+
         isGameRunning = true;
         mainWindow.webContents.send('game-started');
-        
+
         const settings = await loadSettingsInternal();
         const syncDelay = (settings.sync_delay || 5) * 1000;
-        
+
         gameProcessMonitor = setInterval(async () => {
             const processName = path.basename(versionConfig.executable);
             const running = await checkProcessRunning(processName);
-            
+
             if (!running) {
                 clearInterval(gameProcessMonitor);
                 gameProcessMonitor = null;
                 isGameRunning = false;
                 mainWindow.webContents.send('game-stopped');
-                
+
                 setTimeout(async () => {
                     await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
                 }, syncDelay);
             }
         }, 2000);
-        
+
     } catch (error) {
         console.error('Launch error:', error);
         mainWindow.webContents.send('launch-complete');
@@ -722,12 +722,12 @@ function terminateGame() {
             console.error('Error terminating game:', error);
         }
     }
-    
+
     if (gameProcessMonitor) {
         clearInterval(gameProcessMonitor);
         gameProcessMonitor = null;
     }
-    
+
     isGameRunning = false;
     gameProcess = null;
     mainWindow.webContents.send('game-stopped');
@@ -735,28 +735,28 @@ function terminateGame() {
 }
 
 /* ============================
-   BACKUPS
-============================ */
+ *  BACKUPS
+ = *=========================== */
 
 async function createBackup(instanceName) {
     try {
         const instancePath = path.join(INSTANCES_DIR, instanceName);
         const backupDir = path.join(BACKUPS_DIR, instanceName);
         await fs.mkdir(backupDir, { recursive: true });
-        
+
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const backupFile = path.join(backupDir, `backup_${timestamp}.zip`);
-        
+
         const instanceData = JSON.parse(await fs.readFile(path.join(instancePath, 'instance.json'), 'utf8'));
         const managedItems = getManagedItems(instanceData.isGeodeCompatible, instanceData.useMegaHack);
-        
+
         const tempBackupDir = path.join(app.getPath('temp'), `backup_${timestamp}`);
         await fs.mkdir(tempBackupDir, { recursive: true });
-        
+
         for (const item of managedItems) {
             const srcPath = path.join(instancePath, item);
             const destPath = path.join(tempBackupDir, item);
-            
+
             if (await fs.access(srcPath).then(() => true).catch(() => false)) {
                 const stat = await fs.stat(srcPath);
                 if (stat.isDirectory()) {
@@ -766,11 +766,11 @@ async function createBackup(instanceName) {
                 }
             }
         }
-        
+
         const archiver = require('archiver');
         const output = require('fs').createWriteStream(backupFile);
         const archive = archiver('zip', { zlib: { level: 9 } });
-        
+
         await new Promise((resolve, reject) => {
             output.on('close', resolve);
             archive.on('error', reject);
@@ -778,9 +778,9 @@ async function createBackup(instanceName) {
             archive.directory(tempBackupDir, false);
             archive.finalize();
         });
-        
+
         await fs.rm(tempBackupDir, { recursive: true, force: true });
-        
+
         return { success: true, backupFile: path.basename(backupFile) };
     } catch (error) {
         console.error('Backup error:', error);
@@ -791,14 +791,14 @@ async function createBackup(instanceName) {
 async function getBackups(instanceName) {
     try {
         const backupDir = path.join(BACKUPS_DIR, instanceName);
-        
+
         if (!(await fs.access(backupDir).then(() => true).catch(() => false))) {
             return [];
         }
-        
+
         const files = await fs.readdir(backupDir);
         const backups = [];
-        
+
         for (const file of files) {
             if (file.endsWith('.zip')) {
                 const filePath = path.join(backupDir, file);
@@ -810,7 +810,7 @@ async function getBackups(instanceName) {
                 });
             }
         }
-        
+
         backups.sort((a, b) => b.date - a.date);
         return backups;
     } catch (error) {
@@ -823,21 +823,21 @@ async function restoreBackup(instanceName, backupFileName) {
     try {
         const backupPath = path.join(BACKUPS_DIR, instanceName, backupFileName);
         const instancePath = path.join(INSTANCES_DIR, instanceName);
-        
+
         const tempDir = path.join(app.getPath('temp'), `restore_${Date.now()}`);
         await fs.mkdir(tempDir, { recursive: true });
-        
+
         await decompress(backupPath, tempDir, {
             plugins: [decompressUnzip()]
         });
-        
+
         const instanceData = JSON.parse(await fs.readFile(path.join(instancePath, 'instance.json'), 'utf8'));
         const managedItems = getManagedItems(instanceData.isGeodeCompatible, instanceData.useMegaHack);
-        
+
         await transferManagedItems(tempDir, instancePath, managedItems, false);
-        
+
         await fs.rm(tempDir, { recursive: true, force: true });
-        
+
         return { success: true };
     } catch (error) {
         console.error('Restore error:', error);
@@ -857,8 +857,8 @@ async function deleteBackup(instanceName, backupFileName) {
 }
 
 /* ============================
-   FILE SYSTEM HELPERS
-============================ */
+ *  FILE SYSTEM HELPERS
+ = *=========================== */
 
 async function prepareLocalAppData(localPath, infoPath, isTour = false) {
     const allPossibleItems = getAllManagedItems();
@@ -868,9 +868,9 @@ async function prepareLocalAppData(localPath, infoPath, isTour = false) {
             foundInAppData.push(item);
         }
     }
-    
+
     if (foundInAppData.length === 0) return { success: true, found: false };
-    
+
     if (await fs.access(infoPath).then(() => true).catch(() => false)) {
         if (isTour) return { success: true, found: false };
         try {
@@ -896,7 +896,7 @@ async function prepareLocalAppData(localPath, infoPath, isTour = false) {
             buttons: ['Import as "Imported Instance"', 'Move to Trash', 'Cancel'],
             defaultId: 0
         });
-        
+
         if (response === 0) {
             try {
                 const newName = `Imported_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
