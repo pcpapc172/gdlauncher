@@ -47,7 +47,7 @@
     },
     "linux": {
       "target": [
-        "deb"
+        "deb","rpm"
       ],
       "icon": "./",
       "category": "Game",
