@@ -10,11 +10,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -22,74 +20,80 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          echo "Using version: $TAG"
           npm version "$TAG" --no-git-tag-version
 
-      - name: Install dependencies
-        run: npm install
+      - run: npm install
+      - run: npm run build
 
-      - name: Build Windows
-        run: npm run build
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/*.exe
 
-  build-linux:
+  build-linux-deb:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          echo "Using version: $TAG"
           npm version "$TAG" --no-git-tag-version
 
-      - name: Install dependencies
-        run: npm install
+      - run: npm install
+      - run: npm run build -- --linux deb
 
-      - name: Build Linux
-        run: npm run build -- --linux deb
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: linux-build
+          name: linux-deb
           path: dist/*.deb
 
+  build-linux-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y nodejs npm rpm-build rpmdevtools git
+
+      - uses: actions/checkout@v4
+
+      - name: Set version from Git tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          npm version "$TAG" --no-git-tag-version
+
+      - run: npm install
+
+      # IMPORTANT: electron-builder supports RPM natively
+      - run: npm run build -- --linux rpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-rpm
+          path: dist/*.rpm
+
   release:
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux-deb, build-linux-rpm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: windows-build
           path: artifacts
 
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
+      - uses: softprops/action-gh-release@v1
         with:
-          name: linux-build
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: artifacts/*
+          files: artifacts/**/*
           draft: false
           prerelease: false
         env:
