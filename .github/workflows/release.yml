@@ -41,29 +41,27 @@ jobs:
           path: dist/*.deb
   build-linux-rpm:
     runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
     steps:
-      - name: Install dependencies
-        run: |
-          dnf install -y \
-            nodejs npm git \
-            rpm-build rpmdevtools \
-            libxcrypt-compat \
-            gcc-c++ make
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install RPM build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
           npm version "$TAG" --no-git-tag-version
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/gdlauncher/gdlauncher
       - run: npm install
       - name: Build RPM
         run: npm run build -- --linux rpm
         env:
           # Disable publish for build-only
           GH_TOKEN: ""
+          # Enable verbose logging
+          DEBUG: "electron-builder"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-rpm
