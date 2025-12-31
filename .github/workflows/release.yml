@@ -1,99 +1,82 @@
 name: Build and Release
-
 on:
   push:
     tags:
       - 'v*'
-
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Set version from Git tag
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
           npm version "$TAG" --no-git-tag-version
-
       - run: npm install
       - run: npm run build
-
       - uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/*.exe
-
   build-linux-deb:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
           npm version "$TAG" --no-git-tag-version
-
       - run: npm install
       - run: npm run build -- --linux deb
-
       - uses: actions/upload-artifact@v4
         with:
           name: linux-deb
           path: dist/*.deb
-
   build-linux-rpm:
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
-
     steps:
       - name: Install dependencies
         run: |
           dnf install -y \
             nodejs npm git \
             rpm-build rpmdevtools \
-            libxcrypt-compat
-
+            libxcrypt-compat \
+            gcc-c++ make
       - uses: actions/checkout@v4
-
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
           npm version "$TAG" --no-git-tag-version
-
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/gdlauncher/gdlauncher
       - run: npm install
-
-      # IMPORTANT: electron-builder supports RPM natively
-      - run: npm run build -- --linux rpm
-
+      - name: Build RPM
+        run: npm run build -- --linux rpm
+        env:
+          # Disable publish for build-only
+          GH_TOKEN: ""
       - uses: actions/upload-artifact@v4
         with:
           name: linux-rpm
           path: dist/*.rpm
-
   release:
     needs: [build-windows, build-linux-deb, build-linux-rpm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - uses: softprops/action-gh-release@v1
         with:
           files: artifacts/**/*
