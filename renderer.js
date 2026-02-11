@@ -81,6 +81,7 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
+    <li><strong>Linux:</strong> fixed instance list rendering and version labels</li>
     <li><strong>Syncing:</strong> fixed closing while syncing</li>
 </ul>
 <p><em>gd</em></p>
@@ -256,7 +257,30 @@ function setupLaunchListeners() {
 function showProgressBar() { if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function hideProgressBar() { if (progressBar) progressBar.style.width = '0%'; if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function setProgressBar(percentage) { if (progressBar) progressBar.style.width = `${Math.min(100, Math.max(0, percentage))}%`; }
-function formatSize(bytes) { if(bytes == 0) return '0 B'; const s = ['B','KB','MB','GB']; let i = 0; while(bytes >= 1024) { bytes /= 1024; i++; } return `${bytes.toFixed(2)} ${s[i]}`; }
+function formatSize(bytes) {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size <= 0) return '0 B';
+    const s = ['B', 'KB', 'MB', 'GB'];
+    let value = size;
+    let i = 0;
+    while (value >= 1024 && i < s.length - 1) {
+        value /= 1024;
+        i++;
+    }
+    return `${value.toFixed(2)} ${s[i]}`;
+}
+
+function getInstanceData(inst) {
+    return inst?.data && typeof inst.data === 'object' ? inst.data : inst;
+}
+
+function getInstanceVersionLabel(inst) {
+    const data = getInstanceData(inst);
+    const version = data?.version;
+    if (typeof version === 'string') return version;
+    if (version && typeof version === 'object') return version.path || version.id || version.version || 'Unknown';
+    return data?.versionPath || 'Custom';
+}
 
 async function refreshInstances() { try { instances = await window.electron.getInstances(); renderInstances(); } catch (e) { console.error(e); } }
 function renderInstances() {
@@ -267,7 +291,7 @@ function renderInstances() {
         const row = document.createElement('tr');
         row.dataset.name = inst.name;
         if (selectedInstance === inst.name) row.classList.add('selected');
-        row.innerHTML = `<td>${inst.name}</td><td>${formatSize(inst.size)}</td><td>${inst.version}</td>`;
+        row.innerHTML = `<td>${inst.name}</td><td>${formatSize(inst.size)}</td><td>${getInstanceVersionLabel(inst)}</td>`;
         tbody.appendChild(row);
     });
     updateButtonStates();
@@ -293,24 +317,37 @@ async function openInstanceModal(edit) {
     isEditMode = edit; 
     modalTitle.textContent = edit ? 'Edit' : 'Create';
     const vers = await window.electron.getVersions();
-    localVersionSelect.innerHTML = '<option value="">Select...</option>' + vers.map(v => `<option value="${v}">${v}</option>`).join('');
+    const versionOptions = vers.map(v => {
+        if (typeof v === 'string') {
+            return { value: v, label: v };
+        }
+        const value = v?.path || v?.id || '';
+        const label = v?.name || value;
+        return { value, label };
+    }).filter(v => v.value);
+    localVersionSelect.innerHTML = '<option value="">Select...</option>' + versionOptions.map(v => `<option value="${v.value}">${v.label}</option>`).join('');
     
     if(editSaveSection) editSaveSection.style.display = edit ? 'block' : 'none';
 
     if (edit) {
         const inst = instances.find(i => i.name === selectedInstance);
         if(!inst) return;
+        const instanceData = getInstanceData(inst);
         editingInstanceName = selectedInstance;
         instanceNameInput.value = inst.name;
-        const isLocal = (inst.data.versionType || 'local') === 'local';
+        const isLocal = (instanceData.versionType || 'local') === 'local';
         document.querySelector(`input[name="version-type"][value="${isLocal?'local':'custom'}"]`).checked = true;
-        if(isLocal) localVersionSelect.value = inst.data.version || ''; 
-        else exePathInput.value = inst.data.executablePath || '';
-        saveFolderInput.value = inst.data.saveFolderName || '';
-        geodeCheckbox.checked = inst.data.isGeodeCompatible || false;
-        megahackCheckbox.checked = inst.data.useMegaHack || false;
-        steamEmuCheckbox.checked = inst.data.useSteamEmu || false;
-        skipRestartCheckbox.checked = inst.data.skipRestartCheck || false;
+        if(isLocal) {
+            const localVersion = instanceData.version;
+            localVersionSelect.value = typeof localVersion === 'string' ? localVersion : (localVersion?.path || localVersion?.id || '');
+        } else {
+            exePathInput.value = instanceData.executablePath || '';
+        }
+        saveFolderInput.value = instanceData.saveFolderName || '';
+        geodeCheckbox.checked = instanceData.isGeodeCompatible || false;
+        megahackCheckbox.checked = instanceData.useMegaHack || false;
+        steamEmuCheckbox.checked = instanceData.useSteamEmu || false;
+        skipRestartCheckbox.checked = instanceData.skipRestartCheck || false;
     } else {
         editingInstanceName = null; 
         instanceNameInput.value = ''; 
