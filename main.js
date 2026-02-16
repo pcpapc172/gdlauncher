@@ -185,7 +185,8 @@ function setupIpcHandlers() {
     });
 
     // Launch & Game Process
-    ipcMain.on('launch-game', async (event, instanceName) => launchGame(instanceName));
+    ipcMain.handle('launch-instance', (e, n) => launchInstance(n));
+    ipcMain.on('launch-game', async (event, instanceName) => launchInstance(instanceName));
     ipcMain.on('terminate-game', () => terminateGame());
     ipcMain.handle('is-game-running', () => isGameRunning);
     ipcMain.handle('handle-first-run-import', async () => await prepareLocalAppData(await getLinuxAppDataPath('GeometryDash'), path.join(BASE_DIR, 'info.json'), true));
@@ -197,6 +198,8 @@ function setupIpcHandlers() {
     ipcMain.handle('delete-backup', async (event, instanceName, backupFileName) => deleteBackup(instanceName, backupFileName));
 
     // Miscellaneous
+    ipcMain.handle('open-file-dialog', async () => { const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Executables', extensions: ['exe'] }] }); return !canceled && filePaths.length > 0 ? filePaths[0] : null; });
+    ipcMain.handle('open-data-folder', () => shell.openPath(BASE_DIR));
     ipcMain.handle('open-folder', async (event, folderPath) => { await shell.openPath(folderPath); return { success: true }; });
     ipcMain.handle('show-item-in-folder', async (event, itemPath) => { shell.showItemInFolder(itemPath); return { success: true }; });
     ipcMain.handle('open-external', async (event, url) => { await shell.openExternal(url); return { success: true }; });
@@ -588,7 +591,7 @@ async function downloadVersion(version) {
  *  GAME LAUNCH
  = *=========================== */
 
-async function launchGame(instanceName) {
+async function launchInstance(instanceName) {
     if (isGameRunning) {
         mainWindow.webContents.send('launch-complete');
         mainWindow.webContents.send('launch-status', 'Game is already running');
