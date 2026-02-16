@@ -81,9 +81,9 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Downloads fix: fixed broken api/li>
+    <li><strong>fix</li>
 </ul>
-<p><em>the</em></p>
+<p><em>i dont even know anymore</em></p>
 `;
 
 // --- INITIALIZATION ---

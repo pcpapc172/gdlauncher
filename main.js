@@ -457,38 +457,21 @@ async function deleteInstance(name) {
  = *=========================== */
 
 async function getVersions() {
-    try {
-        const versions = [];
-        const categories = await fs.readdir(VERSIONS_DIR);
-
-        for (const category of categories) {
-            const categoryPath = path.join(VERSIONS_DIR, category);
-            const stat = await fs.stat(categoryPath);
-
-            if (stat.isDirectory()) {
-                const versionFolders = await fs.readdir(categoryPath);
-
-                for (const versionFolder of versionFolders) {
-                    const versionPath = path.join(categoryPath, versionFolder);
-                    const versionStat = await fs.stat(versionPath);
-
-                    if (versionStat.isDirectory()) {
-                        versions.push({
-                            id: `${category}/${versionFolder}`,
-                            path: `${category}/${versionFolder}`,
-                            category,
-                            version: versionFolder
-                        });
-                    }
-                }
-            }
-        }
-
-        return versions;
-    } catch (error) {
-        console.error('Error getting versions:', error);
-        return [];
-    }
+    try { 
+        const versions = []; 
+        const entries = await fs.readdir(VERSIONS_DIR, { withFileTypes: true }); 
+        for (const entry of entries) { 
+            if (!entry.isDirectory()) continue; 
+            const subEntries = await fs.readdir(path.join(VERSIONS_DIR, entry.name), { withFileTypes: true }); 
+            for (const subEntry of subEntries) { 
+                if (!subEntry.isDirectory()) continue; 
+                const files = await fs.readdir(path.join(VERSIONS_DIR, entry.name, subEntry.name)); 
+                // Only count as valid version if it has exe or version.json
+                if (files.some(f => f.endsWith('.exe') || f === 'version.json')) versions.push(`${entry.name}/${subEntry.name}`); 
+            } 
+        } 
+        return [...new Set(versions)].sort(); 
+    } catch { return []; } 
 }
 
 async function getVersionsWithSizes() {
@@ -514,19 +497,22 @@ async function getVersionsWithSizes() {
 
 async function fetchRemoteVersions() {
     try { 
-        const response = await axios.get('http://api.pcpapc172.ir/archive/versions.json', { timeout: 5000 }); 
+        const response = await axios.get('http://api.pcpapc172.ir/archive/gdversions.json', { timeout: 5000 }); 
         const remoteVersions = response.data;
+        console.log('=== FETCHED REMOTE VERSIONS ===');
+        console.log('Total versions from API:', remoteVersions.length);
         
+        // Quick check: just mark installed status, all sizes = "Calculating..."
         for (const version of remoteVersions) { 
             const versionPath = path.join(VERSIONS_DIR, version.path);
             version.isInstalled = await fs.access(versionPath).then(()=>true).catch(()=>false);
-            version.size = 'Calculating...';
+            version.size = 'Calculating...'; // Everything starts as calculating
         } 
         
         return remoteVersions; 
     } catch (error) { 
         console.error('Error fetching versions:', error);
-        return [];
+        return []; 
     }
 }
 
