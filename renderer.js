@@ -81,9 +81,9 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>fix</li>
+    <li><strong>idk</li>
 </ul>
-<p><em>i dont even know anymore</em></p>
+<p><em>gd</em></p>
 `;
 
 // --- INITIALIZATION ---
@@ -675,7 +675,18 @@ function selectEditorLevel(el, lvl) {
     editorSelectedKey = lvl.key;
     
     if(editorLevelNameInput) editorLevelNameInput.value = lvl.name;
-    getElem('editor-level-desc').value = lvl.description ? atob(lvl.description) : '';
+    
+    // Safely decode description
+    let decodedDesc = '';
+    if (lvl.description) {
+        try {
+            decodedDesc = atob(lvl.description);
+        } catch (e) {
+            console.warn('Failed to decode description for level:', lvl.name, e);
+            decodedDesc = lvl.description; // Use as-is if not base64
+        }
+    }
+    getElem('editor-level-desc').value = decodedDesc;
     
     const isCustom = lvl.isCustomSong;
     getElem('editor-is-custom').checked = isCustom;
