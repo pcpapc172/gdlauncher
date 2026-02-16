@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://unpkg.com 'unsafe-inline' 'unsafe-eval'; script-src 'self' https://unpkg.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://unpkg.com;">
+    <title>Game Instance Launcher</title>
+    <link rel="stylesheet" href="./styles.css">
+    <style>
+        .editor-container { display: flex; gap: 10px; height: 350px; }
+        .editor-left { width: 35%; border-right: 1px solid var(--border-color); overflow-y: auto; }
+        .editor-right { flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; }
+        .level-item { padding: 8px; cursor: pointer; border-bottom: 1px solid var(--border-color); }
+        .level-item:hover { background-color: var(--hover-bg); }
+        .level-item.active { background-color: var(--selected-bg); color: white; }
+        .control-row { display: flex; gap: 10px; margin-top: 10px; }
+        .control-row .action-btn, .control-row .secondary-btn { flex: 1; }
+        
+        /* Ensure container has explicit size for Monaco */
+        #code-editor-container { width: 100%; height: 500px; border: 1px solid #444; }
+    </style>
+    
+    <script src="https://unpkg.com/monaco-editor@0.33.0/min/vs/loader.js"></script>
+    <script>
+        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.33.0/min/vs' }});
+    </script>
+</head>
+<!-- Add this right after opening <body> tag, before <div id="app"> -->
+<body class="light-theme">
+    <!-- In-App Notification -->
+    <div id="app-notification" class="app-notification">
+        <span id="notification-text"></span>
+        <button id="notification-close" class="notification-close">×</button>
+    </div>
+
+    <div id="app">
+    <!-- rest of your code... -->
+        <div class="main-container">
+            <div class="left-panel">
+                <h2 class="panel-title">Instances</h2>
+                <div class="table-container">
+                    <table id="instance-table">
+                        <thead><tr><th>Name</th><th>Save Size</th><th>Version</th></tr></thead>
+                        <tbody id="instance-list"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <button id="launch-btn" class="action-btn" disabled>Launch</button>
+                <button id="create-btn" class="action-btn">Create</button>
+                <button id="edit-btn" class="action-btn" disabled>Edit</button>
+                <button id="delete-btn" class="action-btn" disabled>Delete</button>
+                <button id="download-btn" class="action-btn">Downloads</button>
+                <button id="editor-btn" class="action-btn">Save Editor</button>
+                <button id="settings-btn" class="action-btn">Settings</button>
+            </div>
+        </div>
+        
+        <div class="bottom-bar">
+            <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
+            <div id="status-label" class="status-label">Ready</div>
+        </div>
+    </div>
+
+    <!-- Instance Modal -->
+    <div id="instance-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title">Create Instance</h2>
+            <div class="form-group"><label>Instance Name:</label><input type="text" id="instance-name" class="input-field"></div>
+            <div class="form-group">
+                <label>Version Type:</label>
+                <div class="radio-group">
+                    <label class="radio-label"><input type="radio" name="version-type" value="local" checked> From Versions Folder</label>
+                    <label class="radio-label"><input type="radio" name="version-type" value="custom"> Custom Executable</label>
+                </div>
+            </div>
+            <div id="local-version-section" class="form-group">
+                <label>Version:</label><select id="local-version" class="input-field"><option value="">Select a version...</option></select>
+            </div>
+            <div id="custom-exe-section" class="form-group" style="display: none;">
+                <label>Executable Path:</label>
+                <div class="input-with-button"><input type="text" id="exe-path" class="input-field" readonly><button id="browse-btn" type="button" class="secondary-btn">Browse...</button></div>
+            </div>
+            <div class="form-group"><label>Save Folder Name:</label><input type="text" id="save-folder" class="input-field"></div>
+            <div class="form-group">
+                <label class="checkbox-label"><input type="checkbox" id="geode-compatible"> Geode Compatible</label>
+                <label class="checkbox-label"><input type="checkbox" id="use-megahack"> Use MegaHack / BetterInfo Files</label>
+                <label class="checkbox-label"><input type="checkbox" id="use-steam-emu"> Launch via SmartSteamEmu.exe</label>
+                <label class="checkbox-label"><input type="checkbox" id="skip-restart-check"> Skip Restart Check (GEODE MIGHT CRASH)</label>
+            </div>
+
+            <!-- NEW SHORTCUT BUTTON -->
+            <div id="edit-save-section" style="margin-bottom: 15px; border-top: 1px solid var(--border-color); padding-top: 10px; display: none;">
+                <button type="button" id="btn-open-in-editor" class="action-btn" style="width: 100%;">Edit Save File in Editor</button>
+            </div>
+
+            <div class="modal-buttons"><button type="button" id="cancel-instance-btn" class="secondary-btn">Cancel</button><button type="button" id="save-instance-btn" class="action-btn">Save</button></div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <div class="settings-section">
+                <h3>Launcher Behavior</h3>
+                <label class="radio-label"><input type="radio" name="close-behavior" value="Stay Open" checked> Stay Open After Game Close</label>
+                <label class="radio-label"><input type="radio" name="close-behavior" value="Close After Game Ends"> ⚠️ Close After Game Ends (Unsafe)</label>
+            </div>
+            <div class="settings-section">
+                <h3>Appearance</h3>
+                <label class="radio-label"><input type="radio" name="theme" value="Light" checked> Light Theme</label>
+                <label class="radio-label"><input type="radio" name="theme" value="Dark"> Dark Theme</label>
+            </div>
+            <div class="settings-section">
+                <h3>Advanced</h3>
+                <label>Post-Game Sync Delay (seconds):</label><input type="number" id="sync-delay" class="input-field" min="0" max="30" value="5">
+                <p class="help-text">Set to 0 to disable restart detection (GEODE MIGHT CRASH).</p>
+            </div>
+            <p class="footer-text">Launcher created by pcpapc172 — <span id="app-version"></span></p>
+            <div class="modal-buttons">
+                <button type="button" id="check-updates-btn" class="secondary-btn">Check for Updates</button>
+                <button type="button" id="open-data-folder-btn" class="secondary-btn">Open Data Folder</button>
+                <button id="save-settings-btn" type="button" class="action-btn">Save and Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Downloads Modal -->
+    <div id="downloads-modal" class="modal">
+        <div class="modal-content" style="max-width: 1200px; max-height: 90vh;">
+            <div id="version-stats" class="version-stats-grid"></div>
+            
+            <input 
+                type="text" 
+                id="version-search" 
+                class="version-search-bar" 
+                placeholder="🔍 Search versions..."
+            />
+            
+            <div id="download-list" class="version-cards-grid" style="max-height: calc(90vh - 350px); min-height: 300px;"></div>
+            
+            <div class="modal-buttons" style="margin-top: 20px;">
+                <button id="close-downloads-btn" type="button" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Save Editor Modal -->
+    <div id="editor-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px; max-height: 85vh;">
+            <h2>Save File Editor</h2>
+            <div class="form-group">
+                <label>Select Instance:</label>
+                <select id="editor-instance-select" class="input-field"><option>Loading...</option></select>
+            </div>
+            <div class="editor-container" style="height: 350px;">
+                <div id="editor-levels-list" class="editor-left" style="width: 30%;">
+                    <div style="padding:10px; opacity:0.6;">Select an instance to load levels.</div>
+                </div>
+                <div id="editor-actions" class="editor-right" style="display:none; overflow-y: auto;">
+                    <!-- Your existing editor content -->
+        <!-- Level Name (Read-only with Rename button) -->
+        <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
+            <input type="text" id="editor-level-name" class="input-field" placeholder="Level Name" readonly style="flex:1; font-weight:bold; background-color: var(--bg-color);">
+            <button id="btn-rename-level" class="secondary-btn" style="width:auto; padding: 5px 10px;">Rename</button>
+        </div>
+        
+        <!-- Description (Read-only with Edit button) -->
+        <div style="display:flex; gap:5px; align-items:center; margin-bottom:10px;">
+            <input type="text" id="editor-level-desc" class="input-field" placeholder="Description" readonly style="flex:1; background-color: var(--bg-color);">
+            <button id="btn-edit-desc" class="secondary-btn" style="width:auto; padding: 5px 10px;">Edit Desc</button>
+        </div>
+
+        <!-- Song Selection -->
+        <div style="margin-bottom:10px;">
+            <label class="checkbox-label" style="font-size:12px; margin-bottom:5px;">
+                <input type="checkbox" id="editor-is-custom"> Custom Song (Newgrounds)
+            </label>
+            
+            <div id="official-song-section">
+                <label style="font-size:12px;">Official Song:</label>
+                <select id="editor-song-select" class="input-field" style="margin-top:3px;">
+                    <option value="-1">Practice: Stay Inside Me - OcularNebula</option>
+                    <option value="0">Stereo Madness - Foreverbound</option>
+                    <option value="1">Back on Track - DJVI</option>
+                    <option value="2">Polargeist - Step</option>
+                    <option value="3">Dry Out - DJVI</option>
+                    <option value="4">Base after Base - DJVI</option>
+                    <option value="5">Cant Let Go - DJVI</option>
+                    <option value="6">Jumper - Waterflame</option>
+                    <option value="7">Time Machine - Waterflame</option>
+                    <option value="8">Cycles - DJVI</option>
+                    <option value="9">xStep - DJVI</option>
+                    <option value="10">Clutterfunk - Waterflame</option>
+                    <option value="11">Theory of Everything - DJ-Nate</option>
+                    <option value="12">Electroman Adventures - Waterflame</option>
+                    <option value="13">Clubstep - DJ-Nate</option>
+                    <option value="14">Electrodynamix - DJ-Nate</option>
+                    <option value="15">Hexagon Force - Waterflame</option>
+                    <option value="16">Blast Processing - Waterflame</option>
+                    <option value="17">Theory of Everything 2 - DJ-Nate</option>
+                    <option value="18">Geometrical Dominator - Waterflame</option>
+                    <option value="19">Deadlocked - F-777</option>
+                    <option value="20">Fingerdash - MDK</option>
+                    <option value="21">Dash - MDK</option>
+                    <option value="22">Explorers - Hinkik</option>
+                    <option value="23">The Seven Seas - F-777</option>
+                    <option value="24">Viking Arena - F-777</option>
+                    <option value="25">Airborne Robots - F-777</option>
+                    <option value="26">Secret - RobTop</option>
+                    <option value="27">Payload - Dex Arson</option>
+                    <option value="28">Beast Mode - Dex Arson</option>
+                    <option value="29">Machina - Dex Arson</option>
+                    <option value="30">Years - Dex Arson</option>
+                    <option value="31">Frontlines - Dex Arson</option>
+                    <option value="32">Space Pirates - Waterflame</option>
+                    <option value="33">Striker - Waterflame</option>
+                    <option value="34">Embers - Dex Arson</option>
+                    <option value="35">Round 1 - Dex Arson</option>
+                    <option value="36">Monster Dance Off - F-777</option>
+                    <option value="37">Press Start - MDK</option>
+                    <option value="38">Nock Em - Bossfight</option>
+                    <option value="39">Power Trip - Boom Kitty</option>
+                </select>
+            </div>
+            
+            <div id="custom-song-section" style="display:none;">
+                <label style="font-size:12px;">Newgrounds Song ID:</label>
+                <input type="number" id="editor-custom-song-id" class="input-field" placeholder="1-99999999" min="1" max="99999999" style="margin-top:3px;">
+            </div>
+            
+            <button id="btn-apply-song" class="action-btn" style="width:100%; margin-top:5px; background-color: #27ae60;">Apply Song</button>
+        </div>
+
+        <!-- Star Request -->
+        <div style="margin-bottom:10px;">
+            <label style="font-size:12px;">Requested Stars:</label>
+            <select id="editor-star-request" class="input-field" style="margin-top:3px;">
+                <option value="0">Auto (No Request)</option>
+                <option value="1">1 Star (Auto)</option>
+                <option value="2">2 Stars (Easy)</option>
+                <option value="3">3 Stars (Normal)</option>
+                <option value="4">4 Stars (Hard)</option>
+                <option value="5">5 Stars (Hard)</option>
+                <option value="6">6 Stars (Harder)</option>
+                <option value="7">7 Stars (Harder)</option>
+                <option value="8">8 Stars (Insane)</option>
+                <option value="9">9 Stars (Insane)</option>
+                <option value="10">10 Stars (Demon)</option>
+            </select>
+        </div>
+
+        <div class="control-row">
+            <button id="btn-export-txt" class="secondary-btn">Export .txt</button>
+            <button id="btn-export-gmd" class="secondary-btn">Export .gmd</button>
+        </div>
+        <div class="control-row">
+            <button id="btn-import-replace" class="action-btn">Import (Replace)</button>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <h2>Rename Level</h2>
+            <div class="form-group">
+                <label>New Name:</label>
+                <input type="text" id="rename-input" class="input-field" maxlength="20">
+            </div>
+            <div class="modal-buttons">
+                <button id="rename-cancel-btn" class="secondary-btn">Cancel</button>
+                <button id="rename-confirm-btn" class="action-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Description Modal -->
+    <div id="desc-modal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <h2>Edit Description</h2>
+            <div class="form-group">
+                <label>Description:</label>
+                <textarea id="desc-input" class="input-field" rows="4" maxlength="140" style="resize: vertical;"></textarea>
+                <p class="help-text">Max 140 characters</p>
+            </div>
+            <div class="modal-buttons">
+                <button id="desc-cancel-btn" class="secondary-btn">Cancel</button>
+                <button id="desc-confirm-btn" class="action-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+            </div>
+            <div class="modal-buttons" style="justify-content: space-between;">
+                <div style="display:flex; gap:10px;">
+                    <button id="btn-import-new" class="action-btn">Import New</button>
+                    <button id="btn-edit-raw" class="action-btn" style="background-color: #e67e22;">Edit Raw XML</button>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button id="btn-save-level" class="action-btn" style="background-color: #27ae60;">Save</button>
+                    <button id="btn-save-exit" class="action-btn">Save & Exit</button>
+                    <button id="close-editor-btn" type="button" class="secondary-btn" style="background-color: #c0392b; border:none; color:white;">Exit without Saving</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Code Editor Modal -->
+    <div id="code-modal" class="modal">
+        <div class="modal-content" style="max-width: 90%; height: 90vh;">
+            <h2>Raw Level Data Editor</h2>
+            <div id="code-editor-container"></div>
+            <div class="modal-buttons">
+                <button id="btn-code-cancel" class="secondary-btn">Cancel</button>
+                <button id="btn-code-save" class="action-btn">Apply Changes</button>
+            </div>
+        </div>
+    </div>
+
+        <!-- Changelog Modal -->
+    <div id="changelog-modal" class="modal">
+        <div class="modal-content">
+            <h2>What's New <span id="changelog-version" class="version-badge">v1.1.5</span></h2>
+            <div id="changelog-text">
+                <!-- Content injected by JS -->
+            </div>
+            <div class="modal-buttons">
+                <button id="close-changelog-btn" class="action-btn">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tour Overlay elements -->
+    <div id="tour-overlay" class="tour-overlay"></div>
+    <div id="tour-tooltip" class="tour-tooltip" style="display: none;">
+        <h3 id="tour-title">Title</h3>
+        <p id="tour-desc">Description goes here.</p>
+        <div class="tour-footer">
+            <span id="tour-counter" class="tour-steps">1/4</span>
+            <div>
+                <button id="tour-skip-btn" class="secondary-btn" style="margin-right: 5px;">Skip</button>
+                <button id="tour-next-btn" class="action-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

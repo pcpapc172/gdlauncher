@@ -1,0 +1,6 @@
+/dist
+/.vs
+/built files
+/node_modules
+build.ps1
+linuxbuild.sh
