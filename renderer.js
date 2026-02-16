@@ -81,9 +81,9 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Syncing:</strong> fixed closing while syncing</li>
+    <li><strong>FULL Bugfix:</strong> fixed the launcher being completly broken</li>
 </ul>
-<p><em>gd</em></p>
+<p><em>sorry i forgot and also this is ai slop</em></p>
 `;
 
 // --- INITIALIZATION ---
