@@ -81,9 +81,9 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>FULL Bugfix:</strong> fixed the launcher being completly broken</li>
+    <li><strong>Downloads fix: fixed broken api/li>
 </ul>
-<p><em>sorry i forgot and also this is ai slop</em></p>
+<p><em>the</em></p>
 `;
 
 // --- INITIALIZATION ---

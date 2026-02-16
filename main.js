@@ -513,12 +513,20 @@ async function getVersionsWithSizes() {
 }
 
 async function fetchRemoteVersions() {
-    try {
-        const response = await axios.get('http://api.pcpapc172.ir/archive/versions.json');
-        return response.data;
-    } catch (error) {
-        console.error('Error fetching remote versions:', error);
-        throw error;
+    try { 
+        const response = await axios.get('http://api.pcpapc172.ir/archive/versions.json', { timeout: 5000 }); 
+        const remoteVersions = response.data;
+        
+        for (const version of remoteVersions) { 
+            const versionPath = path.join(VERSIONS_DIR, version.path);
+            version.isInstalled = await fs.access(versionPath).then(()=>true).catch(()=>false);
+            version.size = 'Calculating...';
+        } 
+        
+        return remoteVersions; 
+    } catch (error) { 
+        console.error('Error fetching versions:', error);
+        return [];
     }
 }
 
