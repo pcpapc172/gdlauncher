@@ -425,29 +425,48 @@ async function launchInstance(instanceName) {
 
 async function checkForUpdates(isManual = false) {
     try {
-		const response = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher/releases/latest', { timeout: 5000 });
-		const latest = { 
-			version: response.data.tag_name.replace(/^v/, ''),
-			'url-win': response.data.assets.find(a => a.name.endsWith('.exe'))?.browser_download_url,
-			'url-linux': response.data.assets.find(a => a.name.endsWith('.deb') || a.name.endsWith('.rpm'))?.browser_download_url
-		};
+        const response = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher/releases/latest', {
+            timeout: 5000,
+            headers: { 'User-Agent': 'gdlauncher-app' }
+        });
+        const release = response.data;
+        const latestVersion = release.tag_name.replace(/^v/, '');
         const currentVersion = app.getVersion();
-        if (semver.gt(latest.version, currentVersion)) {
-            let updateUrl = isLinux ? latest['url-linux'] : latest['url-win'];
-             if (!updateUrl) return;
-            const { response } = await dialog.showMessageBox(mainWindow, { type: 'info', title: 'Update Available', message: `A new version (${latest.version}) is available.`, buttons: ['Download And Install', 'Cancel'] });
-            if (response === 0) {
-                 mainWindow.webContents.send('launch-status', 'Downloading update...');
-                 mainWindow.webContents.send('update-progress-start');
-                 const downloadPath = path.join(app.getPath('temp'), path.basename(updateUrl));
-                 const dl = new EasyDl(updateUrl, downloadPath, { connections: 8, maxRetry: 5 });
-                 dl.on('progress', ({ total }) => { if (total.percentage) mainWindow.webContents.send('update-progress', total.percentage); });
-                 await dl.wait();
-                 mainWindow.webContents.send('update-progress-complete');
-                 shell.openPath(downloadPath);
+
+        if (semver.gt(latestVersion, currentVersion)) {
+            const assets = release.assets || [];
+            const updateUrl = isLinux
+                ? (assets.find(a => a.name.endsWith('.deb') || a.name.endsWith('.rpm'))?.browser_download_url)
+                : (assets.find(a => a.name.endsWith('.exe'))?.browser_download_url);
+
+            if (!updateUrl) {
+                if (isManual) dialog.showMessageBox(mainWindow, { type: 'info', title: 'Update Available', message: `v${latestVersion} is available but no installer was found for your platform.\n\nVisit GitHub to download manually.`, buttons: ['OK'] });
+                return;
             }
-        } else { if (isManual) dialog.showMessageBox(mainWindow, { type: 'info', title: 'No Updates', message: `Latest version (${currentVersion}) installed.`, buttons: ['OK'] }); }
-    } catch (error) { if (isManual) dialog.showMessageBox(mainWindow, { type: 'error', title: 'Error', message: error.message, buttons: ['OK'] }); }
+
+            const { response: choice } = await dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Update Available',
+                message: `A new version (v${latestVersion}) is available.\n\nYou have v${currentVersion}.`,
+                buttons: ['Download And Install', 'Cancel']
+            });
+
+            if (choice === 0) {
+                mainWindow.webContents.send('launch-status', 'Downloading update...');
+                mainWindow.webContents.send('update-progress-start');
+                const downloadPath = path.join(app.getPath('temp'), path.basename(updateUrl));
+                const dl = new EasyDl(updateUrl, downloadPath, { connections: 8, maxRetry: 5 });
+                dl.on('progress', ({ total }) => { if (total.percentage) mainWindow.webContents.send('update-progress', total.percentage); });
+                await dl.wait();
+                mainWindow.webContents.send('update-progress-complete');
+                shell.openPath(downloadPath);
+            }
+        } else {
+            if (isManual) dialog.showMessageBox(mainWindow, { type: 'info', title: 'No Updates', message: `You're on the latest version (v${currentVersion}).`, buttons: ['OK'] });
+        }
+    } catch (error) {
+        if (isManual) dialog.showMessageBox(mainWindow, { type: 'error', title: 'Update Check Failed', message: error.message, buttons: ['OK'] });
+    }
 }
 
 async function getVersions() {
