@@ -425,8 +425,12 @@ async function launchInstance(instanceName) {
 
 async function checkForUpdates(isManual = false) {
     try {
-        const response = await axios.get('http://api.pcpapc172.ir/archive/latestlauncher.json', { timeout: 5000 });
-        const latest = response.data;
+		const response = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher/releases/latest', { timeout: 5000 });
+		const latest = { 
+			version: response.data.tag_name.replace(/^v/, ''),
+			'url-win': response.data.assets.find(a => a.name.endsWith('.exe'))?.browser_download_url,
+			'url-linux': response.data.assets.find(a => a.name.endsWith('.deb') || a.name.endsWith('.rpm'))?.browser_download_url
+		};
         const currentVersion = app.getVersion();
         if (semver.gt(latest.version, currentVersion)) {
             let updateUrl = isLinux ? latest['url-linux'] : latest['url-win'];
