@@ -264,10 +264,18 @@ async function launchInstance(instanceName) {
         await copyDir(sourcePath, backupPath);
         mainWindow.webContents.send('update-progress', 30);
         
-        // Linux Check
+        // Linux dependency check — distro-aware
         if (isLinux) { 
-            try { execSync('dpkg -l | grep "libgnutls30.*:i386"', { stdio: 'ignore' }); } 
-            catch (e) { return { success: false, error: 'Missing required dependency: libgnutls30:i386. Please install it using apt.' }; } 
+            try {
+                const hasDpkg = (() => { try { execSync('which dpkg', { stdio: 'ignore' }); return true; } catch { return false; } })();
+                if (hasDpkg) {
+                    execSync('dpkg -l | grep "libgnutls30.*:i386"', { stdio: 'ignore' });
+                } else {
+                    execSync('rpm -q gnutls.i686', { stdio: 'ignore' });
+                }
+            } catch (e) {
+                return { success: false, error: 'Missing 32-bit GnuTLS library.\nUbuntu/Debian: sudo apt install libgnutls30:i386\nFedora: sudo dnf install gnutls.i686' };
+            }
         }
 
         // --- FIX: Read version.json for paths ---
@@ -423,6 +431,20 @@ async function launchInstance(instanceName) {
 
 // --- HELPERS ---
 
+function getLinuxPkgExt() {
+    try {
+        execSync('which dpkg', { stdio: 'ignore' });
+        return '.deb'; // Debian/Ubuntu
+    } catch {
+        try {
+            execSync('which rpm', { stdio: 'ignore' });
+            return '.rpm'; // Fedora/RHEL
+        } catch {
+            return '.deb'; // fallback
+        }
+    }
+}
+
 async function checkForUpdates(isManual = false) {
     try {
         const response = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher/releases/latest', {
@@ -435,9 +457,10 @@ async function checkForUpdates(isManual = false) {
 
         if (semver.gt(latestVersion, currentVersion)) {
             const assets = release.assets || [];
+            const pkgExt = isLinux ? getLinuxPkgExt() : null;
             const updateUrl = isLinux
-                ? (assets.find(a => a.name.endsWith('.deb') || a.name.endsWith('.rpm'))?.browser_download_url)
-                : (assets.find(a => a.name.endsWith('.exe'))?.browser_download_url);
+                ? assets.find(a => a.name.endsWith(pkgExt))?.browser_download_url
+                : assets.find(a => a.name.endsWith('.exe'))?.browser_download_url;
 
             if (!updateUrl) {
                 if (isManual) dialog.showMessageBox(mainWindow, { type: 'info', title: 'Update Available', message: `v${latestVersion} is available but no installer was found for your platform.\n\nVisit GitHub to download manually.`, buttons: ['OK'] });
