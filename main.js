@@ -1,4 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+// logBuffer holds recent log lines for the log popup
+let logBuffer = [];
+const LOG_BUFFER_MAX = 2000;
 const path = require('path');
 const fs = require('fs').promises;
 const { spawn, execSync } = require('child_process');
@@ -25,7 +28,8 @@ const DEFAULT_SETTINGS = {
     theme: 'Dark', 
     close_behavior: 'Stay Open', 
     sync_delay: 5, 
-    last_run_version: null 
+    last_run_version: null,
+    enable_log_output: false
 };
 
 // --- APP LIFECYCLE ---
@@ -74,6 +78,8 @@ function setupIpcHandlers() {
     ipcMain.handle('editor-get-xml', () => editor.getXml());
     ipcMain.handle('editor-save-xml', (e, x) => editor.saveXml(x));
     ipcMain.handle('editor-rename-level', (e, k, n) => editor.renameLevel(k, n));
+
+    ipcMain.handle('get-log-buffer', () => logBuffer);
 
     // Settings & Data
     ipcMain.handle('load-settings', async () => loadSettingsInternal());
@@ -317,48 +323,94 @@ async function launchInstance(instanceName) {
         gameProcess = spawn(command, args, { detached: false, cwd: path.dirname(finalLaunchPath), env: launchEnv }); 
         const processName = path.basename(exePath); 
         const settings = await loadSettingsInternal();
-        
-        gameProcess.on('exit', async () => { 
-            // If using steam emu, wait a moment then check if game is actually running
+
+        // --- LOG OUTPUT: stream stdout/stderr if enabled ---
+        logBuffer = [];
+        if (settings.enable_log_output) {
+            const pushLog = (line) => {
+                const entry = `[${new Date().toLocaleTimeString()}] ${line}`;
+                logBuffer.push(entry);
+                if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('log-line', entry);
+                }
+            };
+            if (gameProcess.stdout) {
+                const { createInterface } = require('readline');
+                createInterface({ input: gameProcess.stdout, crlfDelay: Infinity })
+                    .on('line', (line) => pushLog(`[stdout] ${line}`));
+            }
+            if (gameProcess.stderr) {
+                const { createInterface } = require('readline');
+                createInterface({ input: gameProcess.stderr, crlfDelay: Infinity })
+                    .on('line', (line) => pushLog(`[stderr] ${line}`));
+            }
+        }
+
+        // --- RESTART-SAFE WATCH LOOP ---
+        // This recursive function handles unlimited restarts:
+        // after the process exits, it waits the sync delay, then checks
+        // if GD restarted. If yes, it polls until that instance also dies,
+        // then calls itself again. This repeats forever until GD truly quits.
+        const watchForExit = async () => {
+            const syncDelay = settings.sync_delay || 5;
+            const skipRestart = (data.skipRestartCheck === true) || (syncDelay === 0);
+
+            if (skipRestart) {
+                isGameRunning = false;
+                await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
+                return;
+            }
+
+            mainWindow.webContents.send('launch-status', `Process ended. Waiting ${syncDelay}s for restart check...`);
+            await new Promise(resolve => setTimeout(resolve, syncDelay * 1000));
+
+            const restarted = await checkProcessRunning(processName);
+            if (!restarted) {
+                // Truly done — sync and finish
+                isGameRunning = false;
+                await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
+                return;
+            }
+
+            // Game restarted — poll until THIS new instance also dies, then loop again
+            mainWindow.webContents.send('launch-status', 'Game restarted, watching...');
+            await new Promise((resolve) => {
+                gameProcessMonitor = setInterval(async () => {
+                    if (!(await checkProcessRunning(processName))) {
+                        clearInterval(gameProcessMonitor);
+                        gameProcessMonitor = null;
+                        resolve();
+                    }
+                }, 2000);
+            });
+
+            // Recurse: check if IT restarted too
+            await watchForExit();
+        };
+
+        gameProcess.on('exit', async () => {
+            // Steam EMU spawns a child process then exits itself — wait briefly
+            // to confirm the real game process is up before handing to watchForExit
             if (useSteamEmu) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-                const gameStillRunning = await checkProcessRunning(path.basename(exePath));
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                const gameStillRunning = await checkProcessRunning(processName);
                 if (gameStillRunning) {
-                    // Game is running, start monitoring it
                     mainWindow.webContents.send('launch-status', 'Game running...');
-                    gameProcessMonitor = setInterval(async () => { 
-                        if (!(await checkProcessRunning(path.basename(exePath)))) { 
-                            clearInterval(gameProcessMonitor); 
-                            gameProcessMonitor = null; 
-                            isGameRunning = false; 
-                            await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings); 
-                        } 
-                    }, 2000);
+                    await new Promise((resolve) => {
+                        gameProcessMonitor = setInterval(async () => {
+                            if (!(await checkProcessRunning(processName))) {
+                                clearInterval(gameProcessMonitor);
+                                gameProcessMonitor = null;
+                                resolve();
+                            }
+                        }, 2000);
+                    });
+                    await watchForExit();
                     return;
                 }
             }
-            
-            // Original logic for non-steam-emu or if game didn't start
-            const syncDelay = settings.sync_delay || 5;
-            const skipRestart = (data.skipRestartCheck === true) || (syncDelay === 0);
-            if (skipRestart) { isGameRunning = false; await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings); return; }
-            mainWindow.webContents.send('launch-status', `Process ended. Waiting ${syncDelay}s...`); 
-            await new Promise(resolve => setTimeout(resolve, syncDelay * 1000)); 
-            const restarted = await checkProcessRunning(path.basename(exePath)); 
-            if (restarted) { 
-                mainWindow.webContents.send('launch-status', 'Game restarted, continuing to watch...'); 
-                gameProcessMonitor = setInterval(async () => { 
-                    if (!(await checkProcessRunning(path.basename(exePath)))) { 
-                        clearInterval(gameProcessMonitor); 
-                        gameProcessMonitor = null; 
-                        isGameRunning = false; 
-                        await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings); 
-                    } 
-                }, 2000); 
-            } else { 
-                isGameRunning = false; 
-                await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings); 
-            } 
+            await watchForExit();
         });
         
         gameProcess.on('error', (error) => { isGameRunning = false; mainWindow.webContents.send('launch-status', `Error: ${error.message}`); mainWindow.webContents.send('launch-complete'); }); 

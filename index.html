@@ -117,6 +117,7 @@
                 <h3>Advanced</h3>
                 <label>Post-Game Sync Delay (seconds):</label><input type="number" id="sync-delay" class="input-field" min="0" max="30" value="5">
                 <p class="help-text">Set to 0 to disable restart detection (GEODE MIGHT CRASH).</p>
+                <label class="checkbox-label" style="margin-top:10px;"><input type="checkbox" id="enable-log-output"> Enable Log Output (shows a live terminal when launching)</label>
             </div>
             <p class="footer-text">Launcher created by pcpapc172 — <span id="app-version"></span></p>
             <div class="modal-buttons">
@@ -342,6 +343,39 @@
             <div>
                 <button id="tour-skip-btn" class="secondary-btn" style="margin-right: 5px;">Skip</button>
                 <button id="tour-next-btn" class="action-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Output Modal -->
+    <div id="log-modal" class="modal">
+        <div class="modal-content" style="max-width: 860px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <h2 style="margin:0;">📟 Game Log Output</h2>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span id="log-status-dot" style="width:10px; height:10px; border-radius:50%; background:#555; display:inline-block;"></span>
+                    <span id="log-status-text" style="font-size:12px; opacity:0.7;">Idle</span>
+                    <button id="log-clear-btn" class="secondary-btn" style="padding:4px 10px; font-size:12px;">Clear</button>
+                    <button id="log-copy-btn" class="secondary-btn" style="padding:4px 10px; font-size:12px;">Copy All</button>
+                </div>
+            </div>
+            <div id="log-terminal" style="
+                flex: 1;
+                background: #0d0d0d;
+                color: #00e676;
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 12px;
+                padding: 12px 14px;
+                border-radius: 6px;
+                overflow-y: auto;
+                min-height: 380px;
+                max-height: 55vh;
+                word-break: break-all;
+                white-space: pre-wrap;
+                border: 1px solid #333;
+            "><span style="opacity:0.4;">Waiting for game launch...</span></div>
+            <div class="modal-buttons" style="margin-top:12px;">
+                <button id="close-log-btn" type="button" class="secondary-btn">Close</button>
             </div>
         </div>
     </div>
