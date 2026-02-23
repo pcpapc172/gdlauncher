@@ -264,18 +264,14 @@ async function launchInstance(instanceName) {
         await copyDir(sourcePath, backupPath);
         mainWindow.webContents.send('update-progress', 30);
         
-        // Linux dependency check — distro-aware
-        if (isLinux) { 
-            try {
-                const hasDpkg = (() => { try { execSync('which dpkg', { stdio: 'ignore' }); return true; } catch { return false; } })();
-                if (hasDpkg) {
-                    execSync('dpkg -l | grep "libgnutls30.*:i386"', { stdio: 'ignore' });
-                } else {
-                    execSync('rpm -q gnutls.i686', { stdio: 'ignore' });
-                }
-            } catch (e) {
-                return { success: false, error: 'Missing 32-bit GnuTLS library.\nUbuntu/Debian: sudo apt install libgnutls30:i386\nFedora: sudo dnf install gnutls.i686' };
+        // Linux dependency check — only needed on Debian/Ubuntu
+        if (isLinux) {
+            const hasDpkg = (() => { try { execSync('which dpkg', { stdio: 'ignore' }); return true; } catch { return false; } })();
+            if (hasDpkg) {
+                try { execSync('dpkg -l | grep "libgnutls30.*:i386"', { stdio: 'ignore' }); }
+                catch (e) { return { success: false, error: 'Missing required dependency: libgnutls30:i386\nRun: sudo apt install libgnutls30:i386' }; }
             }
+            // On Fedora/rpm distros Wine manages its own 32-bit deps — no check needed
         }
 
         // --- FIX: Read version.json for paths ---
