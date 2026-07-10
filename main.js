@@ -13,6 +13,7 @@ const EasyDl = require('easydl');
 const editor = require('./editor');
 
 let mainWindow;
+let consoleWindow = null;
 let isGameRunning = false;
 let gameProcessMonitor = null;
 let gameProcess = null;
@@ -116,6 +117,38 @@ function createWindow() {
     mainWindow.loadFile('index.html');
 }
 
+function broadcastLog(entry) {
+    logBuffer.push(entry);
+    if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('log-line', entry);
+    }
+    if (consoleWindow && !consoleWindow.isDestroyed()) {
+        consoleWindow.webContents.send('log-line', entry);
+    }
+}
+
+function createConsoleWindow() {
+    if (consoleWindow && !consoleWindow.isDestroyed()) {
+        consoleWindow.focus();
+        return;
+    }
+    consoleWindow = new BrowserWindow({
+        width: 860,
+        height: 520,
+        title: 'Game Log Console',
+        icon: path.join(__dirname, 'icon.ico'),
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false
+        }
+    });
+    consoleWindow.setMenuBarVisibility(false);
+    consoleWindow.loadFile('console.html');
+    consoleWindow.on('closed', () => { consoleWindow = null; });
+}
+
 /* ============================
  *  IPC HANDLERS
  = *=========================== */
@@ -138,6 +171,16 @@ function setupIpcHandlers() {
     ipcMain.handle('editor-rename-level', (e, k, n) => editor.renameLevel(k, n));
 
     ipcMain.handle('get-log-buffer', () => logBuffer);
+    ipcMain.handle('open-console-window', () => {
+        createConsoleWindow();
+        setTimeout(() => {
+            if (consoleWindow && !consoleWindow.isDestroyed()) {
+                consoleWindow.webContents.send('log-init', logBuffer);
+                consoleWindow.webContents.send('log-status', isGameRunning);
+            }
+        }, 300);
+        return { success: true };
+    });
 
     // Settings & Data
     ipcMain.handle('load-settings', async () => loadSettingsInternal());
@@ -687,6 +730,9 @@ async function launchGame(instanceName) {
 
         isGameRunning = true;
         mainWindow.webContents.send('game-started');
+        if (consoleWindow && !consoleWindow.isDestroyed()) {
+            consoleWindow.webContents.send('log-status', true);
+        }
 
         const settings = await loadSettingsInternal();
         const syncDelay = (settings.sync_delay || 5) * 1000;
@@ -695,11 +741,7 @@ async function launchGame(instanceName) {
         if (settings.enable_log_output) {
             const pushLog = (line) => {
                 const entry = `[${new Date().toLocaleTimeString()}] ${line}`;
-                logBuffer.push(entry);
-                if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('log-line', entry);
-                }
+                broadcastLog(entry);
             };
             if (gameProcess.stdout) {
                 const { createInterface } = require('readline');
@@ -713,19 +755,54 @@ async function launchGame(instanceName) {
             }
         }
 
-        gameProcessMonitor = setInterval(async () => {
-            const processName = path.basename(versionConfig.executable);
-            const running = await checkProcessRunning(processName);
+        const processName = path.basename(versionConfig.executable);
+        const watchForExit = async () => {
+            const skipRestart = (data.skipRestartCheck === true) || (syncDelay === 0);
 
+            if (skipRestart) {
+                isGameRunning = false;
+                mainWindow.webContents.send('game-stopped');
+                if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send('log-status', false);
+                await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
+                return;
+            }
+
+            mainWindow.webContents.send('launch-status', `Process ended. Waiting ${syncDelay / 1000}s for restart check...`);
+            await new Promise(resolve => setTimeout(resolve, syncDelay));
+
+            const restarted = await checkProcessRunning(processName);
+            if (!restarted) {
+                isGameRunning = false;
+                mainWindow.webContents.send('game-stopped');
+                if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send('log-status', false);
+                await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
+                return;
+            }
+
+            if (settings.enable_log_output) {
+                broadcastLog(`[${new Date().toLocaleTimeString()}] [info] Game restarted — logging of new process output is not supported by the launcher`);
+            }
+            mainWindow.webContents.send('launch-status', 'Game restarted, watching...');
+
+            await new Promise((resolve) => {
+                gameProcessMonitor = setInterval(async () => {
+                    if (!(await checkProcessRunning(processName))) {
+                        clearInterval(gameProcessMonitor);
+                        gameProcessMonitor = null;
+                        resolve();
+                    }
+                }, 2000);
+            });
+
+            await watchForExit();
+        };
+
+        gameProcessMonitor = setInterval(async () => {
+            const running = await checkProcessRunning(processName);
             if (!running) {
                 clearInterval(gameProcessMonitor);
                 gameProcessMonitor = null;
-                isGameRunning = false;
-                mainWindow.webContents.send('game-stopped');
-
-                setTimeout(async () => {
-                    await postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonPath, managedItems, settings);
-                }, syncDelay);
+                await watchForExit();
             }
         }, 2000);
 
@@ -760,6 +837,7 @@ function terminateGame() {
     isGameRunning = false;
     gameProcess = null;
     mainWindow.webContents.send('game-stopped');
+    if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.webContents.send('log-status', false);
     mainWindow.webContents.send('launch-status', 'Game terminated');
 }
 

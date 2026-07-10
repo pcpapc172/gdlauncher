@@ -83,9 +83,9 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Performance:</strong> instance list loads instantly — sizes calculated in background</li>
-    <li><strong>Performance:</strong> file transfer uses single-pass copy instead of count-then-copy</li>
-    <li><strong>Performance:</strong> replaced psList with native tasklist/pgrep for faster process monitoring</li>
+    <li><strong>Console:</strong> log output can now be opened in a separate persistent window</li>
+    <li><strong>Restart:</strong> game restarts are now properly detected and monitored</li>
+    <li><strong>Performance:</strong> instance list loads instantly, single-pass file transfer, native process checking</li>
     <li><strong>Cleanup:</strong> removed ps-list and plist dependencies</li>
 </ul>
 <p><em>pcpapc172</em></p>
@@ -216,6 +216,9 @@ function setupEventListeners() {
         getElem('log-copy-btn').addEventListener('click', () => {
             const text = logTerminal ? logTerminal.innerText : '';
             navigator.clipboard.writeText(text).then(() => showNotification('Log copied to clipboard!', 'success'));
+        });
+        getElem('log-open-window-btn').addEventListener('click', () => {
+            window.electron.openConsoleWindow();
         });
     }
 

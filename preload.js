@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('electron', {
   onUpdateProgress: (callback) => ipcRenderer.on('update-progress', (event, percentage) => callback(percentage)),
   onUpdateProgressComplete: (callback) => ipcRenderer.on('update-progress-complete', () => callback()),
   onLogLine: (callback) => ipcRenderer.on('log-line', (event, line) => callback(line)),
-  getLogBuffer: () => ipcRenderer.invoke('get-log-buffer')
+  getLogBuffer: () => ipcRenderer.invoke('get-log-buffer'),
+  openConsoleWindow: () => ipcRenderer.invoke('open-console-window')
   
 });

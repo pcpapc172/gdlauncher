@@ -1,6 +1,6 @@
 {
   "name": "gd-instance-launcher",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "Game Instance Launcher for Geometry Dash",
   "homepage": "https://github.com/pcpapc172/gdlauncher",
   "main": "main.js",
@@ -37,7 +37,8 @@
       "preload.js",
       "renderer.js",
       "styles.css",
-      "index.html"
+      "index.html",
+      "console.html"
     ],
     "win": {
       "target": "nsis",
