@@ -1094,7 +1094,7 @@ async function countAllTransferFiles(src, managedItems) {
 }
 
 async function transferManagedItems(src, dest, managedItems, move = false, onFileProgress = null) {
-    let fileIndex = 0;
+    const counter = { value: 0 };
     const totalFiles = onFileProgress ? await countAllTransferFiles(src, managedItems) : 0;
 
     for (const item of managedItems) {
@@ -1104,7 +1104,7 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
         if (await fs.access(destPath).then(() => true).catch(() => false)) await fs.rm(destPath, { recursive: true, force: true });
         const srcStat = await fs.stat(srcPath);
         if (srcStat.isDirectory()) {
-            await copyDirWithProgress(srcPath, destPath, item, src, fileIndex, totalFiles, onFileProgress, () => { fileIndex++; });
+            await copyDirWithProgress(srcPath, destPath, src, counter, totalFiles, onFileProgress);
             if (move) {
                 try {
                     await fs.rm(srcPath, { recursive: true, force: true });
@@ -1113,8 +1113,8 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
                 }
             }
         } else {
-            fileIndex++;
-            if (onFileProgress) onFileProgress(item, fileIndex, totalFiles);
+            counter.value++;
+            if (onFileProgress) onFileProgress(item, counter.value, totalFiles);
             if (move) {
                 try {
                     await fs.rename(srcPath, destPath);
@@ -1133,17 +1133,17 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
     }
 }
 
-async function copyDirWithProgress(src, dest, rootItem, instanceRoot, fileIndex, totalFiles, onFileProgress, onFileCount) {
+async function copyDirWithProgress(src, dest, instanceRoot, counter, totalFiles, onFileProgress) {
     await fs.mkdir(dest, { recursive: true });
     for (const entry of await fs.readdir(src, { withFileTypes: true })) {
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
         if (entry.isDirectory()) {
-            await copyDirWithProgress(srcPath, destPath, rootItem, instanceRoot, fileIndex, totalFiles, onFileProgress, onFileCount);
+            await copyDirWithProgress(srcPath, destPath, instanceRoot, counter, totalFiles, onFileProgress);
         } else {
-            onFileCount();
+            counter.value++;
             const relPath = path.relative(instanceRoot, srcPath).replace(/\\/g, '/');
-            if (onFileProgress) onFileProgress(relPath, fileIndex, totalFiles);
+            if (onFileProgress) onFileProgress(relPath, counter.value, totalFiles);
             await fs.copyFile(srcPath, destPath);
         }
     }
