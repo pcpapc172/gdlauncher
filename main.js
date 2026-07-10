@@ -129,7 +129,6 @@ function setupIpcHandlers() {
     ipcMain.handle('editor-get-raw', (e, i, k) => editor.getRaw(k));
     ipcMain.handle('editor-save-all', (e, i, k, u) => editor.saveAll(k, u));
     ipcMain.handle('editor-import-level', (e, k) => editor.importLevel(mainWindow, k));
-    ipcMain.handle('editor-set-song', (e, k, id, c) => editor.setSong(k, id, c));
     ipcMain.handle('editor-export-level', (e, k, f) => editor.exportLevel(mainWindow, k, f));
     ipcMain.handle('editor-get-xml', () => editor.getXml());
     ipcMain.handle('editor-save-xml', (e, x) => editor.saveXml(x));
@@ -145,7 +144,6 @@ function setupIpcHandlers() {
 
     // Versions
     ipcMain.handle('get-versions', async () => getVersions());
-    ipcMain.handle('get-versions-with-sizes', async () => getVersionsWithSizes());
     ipcMain.handle('fetch-remote-versions', async () => fetchRemoteVersions());
     ipcMain.handle('calculate-all-sizes', async (e, versions) => calculateAllVersionSizes(versions));
     ipcMain.on('download-version', async (event, version) => downloadVersion(version));
@@ -186,20 +184,10 @@ function setupIpcHandlers() {
 
     // Launch & Game Process
     ipcMain.on('launch-game', async (event, instanceName) => launchGame(instanceName));
-    ipcMain.on('terminate-game', () => terminateGame());
-    ipcMain.handle('is-game-running', () => isGameRunning);
     ipcMain.handle('handle-first-run-import', async () => await prepareLocalAppData(await getLinuxAppDataPath('GeometryDash'), path.join(BASE_DIR, 'info.json'), true));
 
-    // Backup & Restore
-    ipcMain.handle('create-backup', async (event, instanceName) => createBackup(instanceName));
-    ipcMain.handle('get-backups', async (event, instanceName) => getBackups(instanceName));
-    ipcMain.handle('restore-backup', async (event, instanceName, backupFileName) => restoreBackup(instanceName, backupFileName));
-    ipcMain.handle('delete-backup', async (event, instanceName, backupFileName) => deleteBackup(instanceName, backupFileName));
-
     // Miscellaneous
-    ipcMain.handle('open-folder', async (event, folderPath) => { await shell.openPath(folderPath); return { success: true }; });
-    ipcMain.handle('show-item-in-folder', async (event, itemPath) => { shell.showItemInFolder(itemPath); return { success: true }; });
-    ipcMain.handle('open-external', async (event, url) => { await shell.openExternal(url); return { success: true }; });
+    ipcMain.handle('open-data-folder', async () => { await shell.openPath(BASE_DIR); return { success: true }; });
 
     // Update System
     ipcMain.handle('get-app-version', () => app.getVersion());
@@ -495,27 +483,6 @@ async function getVersions() {
     }
 }
 
-async function getVersionsWithSizes() {
-    try {
-        const versions = await getVersions();
-        const versionsWithSizes = [];
-
-        for (const version of versions) {
-            const versionPath = path.join(VERSIONS_DIR, version.path);
-            const size = await getItemSize(versionPath);
-            versionsWithSizes.push({
-                ...version,
-                size
-            });
-        }
-
-        return versionsWithSizes;
-    } catch (error) {
-        console.error('Error getting versions with sizes:', error);
-        return [];
-    }
-}
-
 async function fetchRemoteVersions() {
     try {
         const response = await axios.get('http://api.pcpapc172.ir/archive/versions.json');
@@ -732,128 +699,6 @@ function terminateGame() {
     gameProcess = null;
     mainWindow.webContents.send('game-stopped');
     mainWindow.webContents.send('launch-status', 'Game terminated');
-}
-
-/* ============================
- *  BACKUPS
- = *=========================== */
-
-async function createBackup(instanceName) {
-    try {
-        const instancePath = path.join(INSTANCES_DIR, instanceName);
-        const backupDir = path.join(BACKUPS_DIR, instanceName);
-        await fs.mkdir(backupDir, { recursive: true });
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const backupFile = path.join(backupDir, `backup_${timestamp}.zip`);
-
-        const instanceData = JSON.parse(await fs.readFile(path.join(instancePath, 'instance.json'), 'utf8'));
-        const managedItems = getManagedItems(instanceData.isGeodeCompatible, instanceData.useMegaHack);
-
-        const tempBackupDir = path.join(app.getPath('temp'), `backup_${timestamp}`);
-        await fs.mkdir(tempBackupDir, { recursive: true });
-
-        for (const item of managedItems) {
-            const srcPath = path.join(instancePath, item);
-            const destPath = path.join(tempBackupDir, item);
-
-            if (await fs.access(srcPath).then(() => true).catch(() => false)) {
-                const stat = await fs.stat(srcPath);
-                if (stat.isDirectory()) {
-                    await copyDir(srcPath, destPath);
-                } else {
-                    await fs.copyFile(srcPath, destPath);
-                }
-            }
-        }
-
-        const archiver = require('archiver');
-        const output = require('fs').createWriteStream(backupFile);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        await new Promise((resolve, reject) => {
-            output.on('close', resolve);
-            archive.on('error', reject);
-            archive.pipe(output);
-            archive.directory(tempBackupDir, false);
-            archive.finalize();
-        });
-
-        await fs.rm(tempBackupDir, { recursive: true, force: true });
-
-        return { success: true, backupFile: path.basename(backupFile) };
-    } catch (error) {
-        console.error('Backup error:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-async function getBackups(instanceName) {
-    try {
-        const backupDir = path.join(BACKUPS_DIR, instanceName);
-
-        if (!(await fs.access(backupDir).then(() => true).catch(() => false))) {
-            return [];
-        }
-
-        const files = await fs.readdir(backupDir);
-        const backups = [];
-
-        for (const file of files) {
-            if (file.endsWith('.zip')) {
-                const filePath = path.join(backupDir, file);
-                const stat = await fs.stat(filePath);
-                backups.push({
-                    fileName: file,
-                    size: stat.size,
-                    date: stat.mtime
-                });
-            }
-        }
-
-        backups.sort((a, b) => b.date - a.date);
-        return backups;
-    } catch (error) {
-        console.error('Error getting backups:', error);
-        return [];
-    }
-}
-
-async function restoreBackup(instanceName, backupFileName) {
-    try {
-        const backupPath = path.join(BACKUPS_DIR, instanceName, backupFileName);
-        const instancePath = path.join(INSTANCES_DIR, instanceName);
-
-        const tempDir = path.join(app.getPath('temp'), `restore_${Date.now()}`);
-        await fs.mkdir(tempDir, { recursive: true });
-
-        await decompress(backupPath, tempDir, {
-            plugins: [decompressUnzip()]
-        });
-
-        const instanceData = JSON.parse(await fs.readFile(path.join(instancePath, 'instance.json'), 'utf8'));
-        const managedItems = getManagedItems(instanceData.isGeodeCompatible, instanceData.useMegaHack);
-
-        await transferManagedItems(tempDir, instancePath, managedItems, false);
-
-        await fs.rm(tempDir, { recursive: true, force: true });
-
-        return { success: true };
-    } catch (error) {
-        console.error('Restore error:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-async function deleteBackup(instanceName, backupFileName) {
-    try {
-        const backupPath = path.join(BACKUPS_DIR, instanceName, backupFileName);
-        await fs.unlink(backupPath);
-        return { success: true };
-    } catch (error) {
-        console.error('Error deleting backup:', error);
-        return { success: false, error: error.message };
-    }
 }
 
 /* ============================
