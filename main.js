@@ -605,14 +605,9 @@ async function launchGame(instanceName) {
 
         let versionPath;
         if (data.versionType === 'local') {
-            versionPath = data.versionPath;
-            if (!path.isAbsolute(versionPath)) {
-                mainWindow.webContents.send('launch-complete');
-                mainWindow.webContents.send('launch-status', 'Invalid local version path');
-                return { success: false, error: 'Invalid local version path' };
-            }
-        } else {
             versionPath = path.join(VERSIONS_DIR, data.version);
+        } else {
+            versionPath = data.executablePath;
         }
 
         if (!(await fs.access(versionPath).then(() => true).catch(() => false))) {
