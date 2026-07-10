@@ -185,21 +185,10 @@ function setupIpcHandlers() {
     });
 
     // Launch & Game Process
-    ipcMain.on('launch-game', async (event, instanceName) => launchGame(instanceName));
-    ipcMain.on('terminate-game', () => terminateGame());
-    ipcMain.handle('is-game-running', () => isGameRunning);
+    ipcMain.handle('launch-instance', async (event, instanceName) => launchGame(instanceName));
+    ipcMain.handle('open-file-dialog', async () => { const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: 'Executables', extensions: ['exe'] }] }); return !canceled && filePaths.length > 0 ? filePaths[0] : null; });
     ipcMain.handle('handle-first-run-import', async () => await prepareLocalAppData(await getLinuxAppDataPath('GeometryDash'), path.join(BASE_DIR, 'info.json'), true));
-
-    // Backup & Restore
-    ipcMain.handle('create-backup', async (event, instanceName) => createBackup(instanceName));
-    ipcMain.handle('get-backups', async (event, instanceName) => getBackups(instanceName));
-    ipcMain.handle('restore-backup', async (event, instanceName, backupFileName) => restoreBackup(instanceName, backupFileName));
-    ipcMain.handle('delete-backup', async (event, instanceName, backupFileName) => deleteBackup(instanceName, backupFileName));
-
-    // Miscellaneous
-    ipcMain.handle('open-folder', async (event, folderPath) => { await shell.openPath(folderPath); return { success: true }; });
-    ipcMain.handle('show-item-in-folder', async (event, itemPath) => { shell.showItemInFolder(itemPath); return { success: true }; });
-    ipcMain.handle('open-external', async (event, url) => { await shell.openExternal(url); return { success: true }; });
+    ipcMain.handle('open-data-folder', () => shell.openPath(BASE_DIR));
 
     // Update System
     ipcMain.handle('get-app-version', () => app.getVersion());
@@ -343,28 +332,24 @@ async function checkForUpdates(isManual = false) {
 
 async function getInstances() {
     try {
-        const files = await fs.readdir(INSTANCES_DIR);
-        const instances = [];
-        for (const file of files) {
-            const instancePath = path.join(INSTANCES_DIR, file);
-            const stat = await fs.stat(instancePath);
-            if (stat.isDirectory()) {
-                const jsonPath = path.join(instancePath, 'instance.json');
-                try {
-                    const data = await fs.readFile(jsonPath, 'utf8');
-                    const instance = JSON.parse(data);
-                    instance.folderName = file;
-                    instances.push(instance);
-                } catch (error) {
-                    console.error(`Error reading instance ${file}:`, error);
-                }
-            }
-        }
-        return instances;
-    } catch (error) {
-        console.error('Error getting instances:', error);
-        return [];
-    }
+        const entries = await fs.readdir(INSTANCES_DIR, { withFileTypes: true });
+        const instancePromises = entries.map(async (entry) => {
+            if (!entry.isDirectory()) return null;
+            const instancePath = path.join(INSTANCES_DIR, entry.name);
+            const jsonPath = path.join(instancePath, 'instance.json');
+            try {
+                const jsonData = await fs.readFile(jsonPath, 'utf8');
+                const data = JSON.parse(jsonData);
+                const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
+                let totalSize = 0;
+                for (const item of managedItems) totalSize += await getItemSize(path.join(instancePath, item));
+                const version = data.versionType === 'local' ? data.version : path.basename(path.dirname(data.executablePath || ""));
+                return { name: entry.name, size: totalSize, version, data };
+            } catch { return { name: entry.name, size: 0, version: 'Error', data: null }; }
+        });
+        const instances = (await Promise.all(instancePromises)).filter(Boolean);
+        return instances.sort((a, b) => a.name.localeCompare(b.name));
+    } catch { return []; }
 }
 
 async function createInstance(data) {
@@ -602,13 +587,13 @@ async function launchGame(instanceName) {
     if (isGameRunning) {
         mainWindow.webContents.send('launch-complete');
         mainWindow.webContents.send('launch-status', 'Game is already running');
-        return;
+        return { success: false, error: 'Game is already running' };
     }
 
     if (isSyncing) {
         mainWindow.webContents.send('launch-complete');
         mainWindow.webContents.send('launch-status', 'Please wait, syncing in progress...');
-        return;
+        return { success: false, error: 'Syncing in progress' };
     }
 
     try {
@@ -624,7 +609,7 @@ async function launchGame(instanceName) {
             if (!path.isAbsolute(versionPath)) {
                 mainWindow.webContents.send('launch-complete');
                 mainWindow.webContents.send('launch-status', 'Invalid local version path');
-                return;
+                return { success: false, error: 'Invalid local version path' };
             }
         } else {
             versionPath = path.join(VERSIONS_DIR, data.version);
@@ -633,7 +618,7 @@ async function launchGame(instanceName) {
         if (!(await fs.access(versionPath).then(() => true).catch(() => false))) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', 'Version not found');
-            return;
+            return { success: false, error: 'Version not found' };
         }
 
         const versionJsonPath = path.join(versionPath, 'version.json');
@@ -646,7 +631,7 @@ async function launchGame(instanceName) {
         if (!(await fs.access(exePath).then(() => true).catch(() => false))) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', 'Game executable not found');
-            return;
+            return { success: false, error: 'Game executable not found' };
         }
 
         const localAppDataPath = await getLinuxAppDataPath(data.saveFolderName);
@@ -656,7 +641,7 @@ async function launchGame(instanceName) {
         if (!prepResult.success) {
             mainWindow.webContents.send('launch-complete');
             mainWindow.webContents.send('launch-status', prepResult.error || 'Failed to prepare save data');
-            return;
+            return { success: false, error: prepResult.error || 'Failed to prepare save data' };
         }
 
         await ensureInstanceIntegrity(instancePath, data.isGeodeCompatible, data.useMegaHack);
@@ -702,11 +687,13 @@ async function launchGame(instanceName) {
             }
         }, 2000);
 
+        return { success: true };
     } catch (error) {
         console.error('Launch error:', error);
         mainWindow.webContents.send('launch-complete');
         mainWindow.webContents.send('launch-status', `Launch failed: ${error.message}`);
         isGameRunning = false;
+        return { success: false, error: error.message };
     }
 }
 
