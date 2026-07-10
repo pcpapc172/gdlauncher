@@ -1,4 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+let logBuffer = [];
+const LOG_BUFFER_MAX = 2000;
 const path = require('path');
 const fs = require('fs').promises;
 const { spawn, execSync } = require('child_process');
@@ -25,7 +27,8 @@ const DEFAULT_SETTINGS = {
     theme: 'Dark',
     close_behavior: 'Stay Open',
     sync_delay: 5,
-    last_run_version: null
+    last_run_version: null,
+    enable_log_output: false
 };
 
 app.whenReady().then(async () => {
@@ -134,6 +137,8 @@ function setupIpcHandlers() {
     ipcMain.handle('editor-get-xml', () => editor.getXml());
     ipcMain.handle('editor-save-xml', (e, x) => editor.saveXml(x));
     ipcMain.handle('editor-rename-level', (e, k, n) => editor.renameLevel(k, n));
+
+    ipcMain.handle('get-log-buffer', () => logBuffer);
 
     // Settings & Data
     ipcMain.handle('load-settings', async () => loadSettingsInternal());
@@ -642,8 +647,9 @@ async function launchGame(instanceName) {
         await ensureInstanceIntegrity(instancePath, data.isGeodeCompatible, data.useMegaHack);
 
         const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
-        await transferManagedItems(instancePath, localAppDataPath, managedItems, false, (item, pct) => {
-            mainWindow.webContents.send('launch-status', `Preparing instance ${instanceName} (${item}) — ${pct}%`);
+        await transferManagedItems(instancePath, localAppDataPath, managedItems, false, (file, current, total) => {
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            mainWindow.webContents.send('launch-status', `Preparing instance ${instanceName} (${file}) — ${pct}% (${current}/${total})`);
         });
 
         await fs.writeFile(infoJsonPath, JSON.stringify({ instanceName }, null, 4));
@@ -667,6 +673,28 @@ async function launchGame(instanceName) {
 
         const settings = await loadSettingsInternal();
         const syncDelay = (settings.sync_delay || 5) * 1000;
+
+        logBuffer = [];
+        if (settings.enable_log_output) {
+            const pushLog = (line) => {
+                const entry = `[${new Date().toLocaleTimeString()}] ${line}`;
+                logBuffer.push(entry);
+                if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('log-line', entry);
+                }
+            };
+            if (gameProcess.stdout) {
+                const { createInterface } = require('readline');
+                createInterface({ input: gameProcess.stdout, crlfDelay: Infinity })
+                    .on('line', (line) => pushLog(`[stdout] ${line}`));
+            }
+            if (gameProcess.stderr) {
+                const { createInterface } = require('readline');
+                createInterface({ input: gameProcess.stderr, crlfDelay: Infinity })
+                    .on('line', (line) => pushLog(`[stderr] ${line}`));
+            }
+        }
 
         gameProcessMonitor = setInterval(async () => {
             const processName = path.basename(versionConfig.executable);
@@ -1040,19 +1068,43 @@ async function ensureInstanceIntegrity(instancePath, isGeode, useMegahack) {
     }
 }
 
-async function transferManagedItems(src, dest, managedItems, move = false, onProgress = null) {
-    const total = managedItems.length;
-    for (let i = 0; i < managedItems.length; i++) {
-        const item = managedItems[i];
+async function countFilesRecursive(dirPath) {
+    let count = 0;
+    try {
+        const entries = await fs.readdir(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) count += await countFilesRecursive(path.join(dirPath, entry.name));
+            else count++;
+        }
+    } catch {}
+    return count;
+}
+
+async function countAllTransferFiles(src, managedItems) {
+    let total = 0;
+    for (const item of managedItems) {
+        const srcPath = path.join(src, item);
+        try {
+            const stat = await fs.stat(srcPath);
+            if (stat.isDirectory()) total += await countFilesRecursive(srcPath);
+            else total++;
+        } catch {}
+    }
+    return total;
+}
+
+async function transferManagedItems(src, dest, managedItems, move = false, onFileProgress = null) {
+    let fileIndex = 0;
+    const totalFiles = onFileProgress ? await countAllTransferFiles(src, managedItems) : 0;
+
+    for (const item of managedItems) {
         const srcPath = path.join(src, item);
         const destPath = path.join(dest, item);
         if (!(await fs.access(srcPath).then(() => true).catch(() => false))) continue;
-        const pct = Math.round(((i + 1) / total) * 100);
-        if (onProgress) onProgress(item, pct);
         if (await fs.access(destPath).then(() => true).catch(() => false)) await fs.rm(destPath, { recursive: true, force: true });
         const srcStat = await fs.stat(srcPath);
         if (srcStat.isDirectory()) {
-            await copyDir(srcPath, destPath);
+            await copyDirWithProgress(srcPath, destPath, item, src, fileIndex, totalFiles, onFileProgress, () => { fileIndex++; });
             if (move) {
                 try {
                     await fs.rm(srcPath, { recursive: true, force: true });
@@ -1061,6 +1113,8 @@ async function transferManagedItems(src, dest, managedItems, move = false, onPro
                 }
             }
         } else {
+            fileIndex++;
+            if (onFileProgress) onFileProgress(item, fileIndex, totalFiles);
             if (move) {
                 try {
                     await fs.rename(srcPath, destPath);
@@ -1075,6 +1129,22 @@ async function transferManagedItems(src, dest, managedItems, move = false, onPro
             } else {
                 await fs.copyFile(srcPath, destPath);
             }
+        }
+    }
+}
+
+async function copyDirWithProgress(src, dest, rootItem, instanceRoot, fileIndex, totalFiles, onFileProgress, onFileCount) {
+    await fs.mkdir(dest, { recursive: true });
+    for (const entry of await fs.readdir(src, { withFileTypes: true })) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            await copyDirWithProgress(srcPath, destPath, rootItem, instanceRoot, fileIndex, totalFiles, onFileProgress, onFileCount);
+        } else {
+            onFileCount();
+            const relPath = path.relative(instanceRoot, srcPath).replace(/\\/g, '/');
+            if (onFileProgress) onFileProgress(relPath, fileIndex, totalFiles);
+            await fs.copyFile(srcPath, destPath);
         }
     }
 }
@@ -1094,7 +1164,10 @@ async function postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonP
         isSyncing = true;
         mainWindow.webContents.send('launch-status', `Syncing data for ${instanceName}...`);
         const instancePath = path.join(INSTANCES_DIR, instanceName);
-        await transferManagedItems(localAppDataPath, instancePath, managedItems, true);
+        await transferManagedItems(localAppDataPath, instancePath, managedItems, true, (file, current, total) => {
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            mainWindow.webContents.send('launch-status', `Syncing ${instanceName} (${file}) — ${pct}% (${current}/${total})`);
+        });
         if (await fs.access(infoJsonPath).then(() => true).catch(() => false)) {
             await fs.unlink(infoJsonPath);
         }

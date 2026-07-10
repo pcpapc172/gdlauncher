@@ -32,6 +32,8 @@ const downloadsModal = getElem('downloads-modal');
 const editorModal = getElem('editor-modal');
 const codeModal = getElem('code-modal');
 const changelogModal = getElem('changelog-modal');
+const logModal = getElem('log-modal');
+const logTerminal = getElem('log-terminal');
 const tourOverlay = getElem('tour-overlay');
 const tourTooltip = getElem('tour-tooltip');
 const instanceNameInput = getElem('instance-name');
@@ -117,6 +119,8 @@ async function loadSettings() {
         if(closeRadio) closeRadio.checked = true;
         const delayInput = getElem('sync-delay');
         if(delayInput) delayInput.value = currentSettings.sync_delay !== undefined ? currentSettings.sync_delay : 5;
+        const logCheckbox = getElem('enable-log-output');
+        if(logCheckbox) logCheckbox.checked = currentSettings.enable_log_output || false;
     } catch (e) {
         currentSettings = { theme: 'Dark', close_behavior: 'Stay Open', sync_delay: 5 };
         applyTheme('Dark');
@@ -204,6 +208,17 @@ function setupEventListeners() {
     if(getElem('close-changelog-btn')) {
         getElem('close-changelog-btn').addEventListener('click', () => changelogModal.classList.remove('active'));
     }
+
+    if(getElem('close-log-btn')) {
+        getElem('close-log-btn').addEventListener('click', () => logModal.classList.remove('active'));
+        logModal.addEventListener('click', (e) => { if (e.target.id === 'log-modal') logModal.classList.remove('active'); });
+        getElem('log-clear-btn').addEventListener('click', () => { if(logTerminal) logTerminal.innerHTML = '<span style="opacity:0.4;">Log cleared.</span>'; });
+        getElem('log-copy-btn').addEventListener('click', () => {
+            const text = logTerminal ? logTerminal.innerText : '';
+            navigator.clipboard.writeText(text).then(() => showNotification('Log copied to clipboard!', 'success'));
+        });
+    }
+
     if(getElem('tour-next-btn')) {
         getElem('tour-next-btn').addEventListener('click', nextTourStep);
         getElem('tour-skip-btn').addEventListener('click', endTour);
@@ -216,6 +231,7 @@ function setupLaunchListeners() {
         isGameRunning = false;
         setUIState(false);
         hideProgressBar();
+        setLogStatus(false);
         refreshInstances();
     });
     window.electron.onDownloadProgress((data) => {
@@ -254,12 +270,40 @@ function setupLaunchListeners() {
     window.electron.onUpdateProgressStart(() => { showProgressBar(); setProgressBar(0); });
     window.electron.onUpdateProgress((percentage) => setProgressBar(percentage));
     window.electron.onUpdateProgressComplete(() => { setProgressBar(100); setTimeout(hideProgressBar, 2000); });
+
+    window.electron.onLogLine((line) => {
+        if (!logTerminal) return;
+        if (logTerminal.querySelector('span[style*="opacity"]') && logTerminal.children.length === 1) {
+            logTerminal.innerHTML = '';
+        }
+        const div = document.createElement('div');
+        div.textContent = line;
+        if (line.includes('[stderr]')) div.style.color = '#ff5252';
+        else if (line.includes('[stdout]')) div.style.color = '#00e676';
+        logTerminal.appendChild(div);
+        logTerminal.scrollTop = logTerminal.scrollHeight;
+    });
 }
 
 function showProgressBar() { if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function hideProgressBar() { if (progressBar) progressBar.style.width = '0%'; if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function setProgressBar(percentage) { if (progressBar) progressBar.style.width = `${Math.min(100, Math.max(0, percentage))}%`; }
 function formatSize(bytes) { if(bytes == null || isNaN(bytes)) return '0 B'; if(bytes == 0) return '0 B'; const s = ['B','KB','MB','GB']; let i = 0; while(bytes >= 1024) { bytes /= 1024; i++; } return `${bytes.toFixed(2)} ${s[i]}`; }
+
+function setLogStatus(running) {
+    const dot = getElem('log-status-dot');
+    const txt = getElem('log-status-text');
+    if (!dot || !txt) return;
+    if (running) {
+        dot.style.background = '#00e676';
+        dot.style.boxShadow = '0 0 6px #00e676';
+        txt.textContent = 'Live';
+    } else {
+        dot.style.background = '#555';
+        dot.style.boxShadow = 'none';
+        txt.textContent = 'Idle';
+    }
+}
 
 async function refreshInstances() { try { instances = await window.electron.getInstances(); renderInstances(); } catch (e) { console.error(e); } }
 function renderInstances() {
@@ -287,8 +331,26 @@ function setUIState(launching) { isGameRunning = launching; [launchBtn, createBt
 async function launchInstance() {
     if (!selectedInstance) return;
     setUIState(true); showProgressBar(); setProgressBar(10); statusLabel.textContent = `Preparing ${selectedInstance}...`;
+
+    if (currentSettings.enable_log_output && logTerminal && logModal) {
+        logTerminal.innerHTML = '<span style="opacity:0.4;">Starting game process...</span>';
+        setLogStatus(true);
+        logModal.classList.add('active');
+        const buf = await window.electron.getLogBuffer();
+        if (buf && buf.length > 0) {
+            logTerminal.innerHTML = '';
+            buf.forEach(line => {
+                const div = document.createElement('div');
+                div.textContent = line;
+                if (line.includes('[stderr]')) div.style.color = '#ff5252';
+                logTerminal.appendChild(div);
+            });
+            logTerminal.scrollTop = logTerminal.scrollHeight;
+        }
+    }
+
     const res = await window.electron.launchInstance(selectedInstance);
-    if (!res.success) { showNotification(`Failed: ${res.error}`, 'error'); setUIState(false); hideProgressBar(); statusLabel.textContent = 'Ready'; }
+    if (!res.success) { showNotification(`Failed: ${res.error}`, 'error'); setUIState(false); hideProgressBar(); statusLabel.textContent = 'Ready'; setLogStatus(false); }
     else { setProgressBar(100); statusLabel.textContent = 'Running...'; setTimeout(hideProgressBar, 1500); }
 }
 
@@ -387,7 +449,8 @@ async function saveSettings() {
     const closeBehavior = document.querySelector('input[name="close-behavior"]:checked').value;
     let syncDelay = parseInt(getElem('sync-delay').value);
     if(isNaN(syncDelay)) syncDelay = 5;
-    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, last_run_version: appVersion };
+    const enableLog = getElem('enable-log-output') ? getElem('enable-log-output').checked : false;
+    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, enable_log_output: enableLog, last_run_version: appVersion };
     applyTheme(theme);
     await window.electron.saveSettings(currentSettings);
     settingsModal.classList.remove('active');
