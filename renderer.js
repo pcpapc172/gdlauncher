@@ -218,10 +218,16 @@ function setupLaunchListeners() {
     window.electron.onDownloadProgress((data) => {
         const card = document.querySelector(`.version-card[data-id="${data.id}"]`);
         if (!card) return;
-
+        
         const progressBar = card.querySelector('.version-progress-bar');
         if (progressBar && data.percentage) {
             progressBar.style.width = `${data.percentage}%`;
+        }
+        
+        const btn = card.querySelector('.version-btn');
+        if (btn && data.status) {
+            const isRepair = btn.classList.contains('repair');
+            btn.textContent = isRepair ? `🔧 ${data.status}` : `⬇️ ${data.status}`;
         }
     });
 
