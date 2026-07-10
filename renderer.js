@@ -83,10 +83,10 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Cleanup:</strong> removed dead code and fixed IPC mismatches</li>
-    <li><strong>Instances:</strong> fixed undefined names, save sizes, and version display</li>
-    <li><strong>Launch:</strong> fixed launch path resolution for existing instances</li>
-    <li><strong>Progress:</strong> added file-level transfer progress during launch</li>
+    <li><strong>Progress:</strong> detailed file-level transfer progress with full paths and file counts</li>
+    <li><strong>Log Console:</strong> restored live terminal output with enable toggle in settings</li>
+    <li><strong>Sync:</strong> post-game sync now shows same detailed progress as launch</li>
+    <li><strong>Fixes:</strong> fixed IPC mismatches, undefined instances, and launch path resolution</li>
 </ul>
 <p><em>pcpapc172</em></p>
 `;
