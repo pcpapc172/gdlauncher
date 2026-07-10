@@ -81,9 +81,12 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Syncing:</strong> fixed closing while syncing</li>
+    <li><strong>Cleanup:</strong> removed dead code and fixed IPC mismatches</li>
+    <li><strong>Instances:</strong> fixed undefined names, save sizes, and version display</li>
+    <li><strong>Launch:</strong> fixed launch path resolution for existing instances</li>
+    <li><strong>Progress:</strong> added file-level transfer progress during launch</li>
 </ul>
-<p><em>gd</em></p>
+<p><em>pcpapc172</em></p>
 `;
 
 // --- INITIALIZATION ---

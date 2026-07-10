@@ -642,7 +642,9 @@ async function launchGame(instanceName) {
         await ensureInstanceIntegrity(instancePath, data.isGeodeCompatible, data.useMegaHack);
 
         const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
-        await transferManagedItems(instancePath, localAppDataPath, managedItems, false);
+        await transferManagedItems(instancePath, localAppDataPath, managedItems, false, (item, pct) => {
+            mainWindow.webContents.send('launch-status', `Preparing instance ${instanceName} (${item}) — ${pct}%`);
+        });
 
         await fs.writeFile(infoJsonPath, JSON.stringify({ instanceName }, null, 4));
 
@@ -1038,11 +1040,15 @@ async function ensureInstanceIntegrity(instancePath, isGeode, useMegahack) {
     }
 }
 
-async function transferManagedItems(src, dest, managedItems, move = false) {
-    for (const item of managedItems) {
+async function transferManagedItems(src, dest, managedItems, move = false, onProgress = null) {
+    const total = managedItems.length;
+    for (let i = 0; i < managedItems.length; i++) {
+        const item = managedItems[i];
         const srcPath = path.join(src, item);
         const destPath = path.join(dest, item);
         if (!(await fs.access(srcPath).then(() => true).catch(() => false))) continue;
+        const pct = Math.round(((i + 1) / total) * 100);
+        if (onProgress) onProgress(item, pct);
         if (await fs.access(destPath).then(() => true).catch(() => false)) await fs.rm(destPath, { recursive: true, force: true });
         const srcStat = await fs.stat(srcPath);
         if (srcStat.isDirectory()) {
