@@ -15,6 +15,7 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
+          npm version "0.0.0" --no-git-tag-version
           npm version "$TAG" --no-git-tag-version
       - run: npm install
       - run: npm run build
@@ -32,6 +33,7 @@ jobs:
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
+          npm version "0.0.0" --no-git-tag-version
           npm version "$TAG" --no-git-tag-version
       - run: npm install
       - run: npm run build -- --linux deb
@@ -53,6 +55,7 @@ jobs:
       - name: Set version from Git tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
+          npm version "0.0.0" --no-git-tag-version
           npm version "$TAG" --no-git-tag-version
       - run: npm install
       - name: Build RPM
