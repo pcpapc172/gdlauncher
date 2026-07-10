@@ -250,7 +250,7 @@ function setupLaunchListeners() {
 function showProgressBar() { if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function hideProgressBar() { if (progressBar) progressBar.style.width = '0%'; if (progressContainer) { progressContainer.style.visibility = 'visible'; progressContainer.style.opacity = '1'; } }
 function setProgressBar(percentage) { if (progressBar) progressBar.style.width = `${Math.min(100, Math.max(0, percentage))}%`; }
-function formatSize(bytes) { if(bytes == 0) return '0 B'; const s = ['B','KB','MB','GB']; let i = 0; while(bytes >= 1024) { bytes /= 1024; i++; } return `${bytes.toFixed(2)} ${s[i]}`; }
+function formatSize(bytes) { if(bytes == null || isNaN(bytes)) return '0 B'; if(bytes == 0) return '0 B'; const s = ['B','KB','MB','GB']; let i = 0; while(bytes >= 1024) { bytes /= 1024; i++; } return `${bytes.toFixed(2)} ${s[i]}`; }
 
 async function refreshInstances() { try { instances = await window.electron.getInstances(); renderInstances(); } catch (e) { console.error(e); } }
 function renderInstances() {
