@@ -8,7 +8,6 @@ const os = require('os');
 const axios = require('axios');
 const decompress = require('decompress');
 const decompressUnzip = require('decompress-unzip');
-const psList = require('ps-list');
 const semver = require('semver');
 const EasyDl = require('easydl');
 const editor = require('./editor');
@@ -144,6 +143,7 @@ function setupIpcHandlers() {
     ipcMain.handle('load-settings', async () => loadSettingsInternal());
     ipcMain.handle('save-settings', async (event, settings) => { try { await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 4)); return true; } catch (error) { return false; } });
     ipcMain.handle('get-instances', async () => getInstances());
+    ipcMain.handle('calculate-instance-sizes', async () => calculateInstanceSizes());
     ipcMain.handle('create-instance', async (event, data) => createInstance(data));
     ipcMain.handle('edit-instance', async (event, originalName, data) => editInstance(originalName, data));
     ipcMain.handle('delete-instance', async (event, name) => deleteInstance(name));
@@ -345,15 +345,33 @@ async function getInstances() {
             try {
                 const jsonData = await fs.readFile(jsonPath, 'utf8');
                 const data = JSON.parse(jsonData);
-                const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
-                let totalSize = 0;
-                for (const item of managedItems) totalSize += await getItemSize(path.join(instancePath, item));
                 const version = data.versionType === 'local' ? data.version : path.basename(path.dirname(data.executablePath || ""));
-                return { name: entry.name, size: totalSize, version, data };
+                return { name: entry.name, size: null, version, data };
             } catch { return { name: entry.name, size: 0, version: 'Error', data: null }; }
         });
         const instances = (await Promise.all(instancePromises)).filter(Boolean);
         return instances.sort((a, b) => a.name.localeCompare(b.name));
+    } catch { return []; }
+}
+
+async function calculateInstanceSizes() {
+    try {
+        const entries = await fs.readdir(INSTANCES_DIR, { withFileTypes: true });
+        const results = [];
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const instancePath = path.join(INSTANCES_DIR, entry.name);
+            const jsonPath = path.join(instancePath, 'instance.json');
+            try {
+                const jsonData = await fs.readFile(jsonPath, 'utf8');
+                const data = JSON.parse(jsonData);
+                const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
+                let totalSize = 0;
+                for (const item of managedItems) totalSize += await getItemSize(path.join(instancePath, item));
+                results.push({ name: entry.name, size: totalSize });
+            } catch { results.push({ name: entry.name, size: 0 }); }
+        }
+        return results;
     } catch { return []; }
 }
 
@@ -647,9 +665,8 @@ async function launchGame(instanceName) {
         await ensureInstanceIntegrity(instancePath, data.isGeodeCompatible, data.useMegaHack);
 
         const managedItems = getManagedItems(data.isGeodeCompatible, data.useMegaHack);
-        await transferManagedItems(instancePath, localAppDataPath, managedItems, false, (file, current, total) => {
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            mainWindow.webContents.send('launch-status', `Preparing instance ${instanceName} (${file}) — ${pct}% (${current}/${total})`);
+        await transferManagedItems(instancePath, localAppDataPath, managedItems, false, (file, current) => {
+            mainWindow.webContents.send('launch-status', `Preparing instance ${instanceName} (${file}) — ${current} files`);
         });
 
         await fs.writeFile(infoJsonPath, JSON.stringify({ instanceName }, null, 4));
@@ -840,14 +857,14 @@ async function getLinuxAppDataPath(saveFolderName) {
 
 async function checkProcessRunning(processName) {
     try {
-        const list = await psList();
-        return list.some(p => {
-            const nameMatch = p.name.toLowerCase() === processName.toLowerCase();
-            let cmdMatch = false;
-            if (isLinux && p.cmd) cmdMatch = p.cmd.toLowerCase().includes(processName.toLowerCase());
-            return nameMatch || cmdMatch;
-        });
-    } catch (error) {
+        if (isLinux) {
+            const result = execSync(`pgrep -f "${processName}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+            return result.trim().length > 0;
+        } else {
+            const result = execSync(`tasklist /FI "IMAGENAME eq ${processName}" /NH`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+            return result.toLowerCase().includes(processName.toLowerCase());
+        }
+    } catch {
         return false;
     }
 }
@@ -946,34 +963,8 @@ async function ensureInstanceIntegrity(instancePath, isGeode, useMegahack) {
     }
 }
 
-async function countFilesRecursive(dirPath) {
-    let count = 0;
-    try {
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        for (const entry of entries) {
-            if (entry.isDirectory()) count += await countFilesRecursive(path.join(dirPath, entry.name));
-            else count++;
-        }
-    } catch {}
-    return count;
-}
-
-async function countAllTransferFiles(src, managedItems) {
-    let total = 0;
-    for (const item of managedItems) {
-        const srcPath = path.join(src, item);
-        try {
-            const stat = await fs.stat(srcPath);
-            if (stat.isDirectory()) total += await countFilesRecursive(srcPath);
-            else total++;
-        } catch {}
-    }
-    return total;
-}
-
 async function transferManagedItems(src, dest, managedItems, move = false, onFileProgress = null) {
     const counter = { value: 0 };
-    const totalFiles = onFileProgress ? await countAllTransferFiles(src, managedItems) : 0;
 
     for (const item of managedItems) {
         const srcPath = path.join(src, item);
@@ -982,7 +973,7 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
         if (await fs.access(destPath).then(() => true).catch(() => false)) await fs.rm(destPath, { recursive: true, force: true });
         const srcStat = await fs.stat(srcPath);
         if (srcStat.isDirectory()) {
-            await copyDirWithProgress(srcPath, destPath, src, counter, totalFiles, onFileProgress);
+            await copyDirWithProgress(srcPath, destPath, src, counter, onFileProgress);
             if (move) {
                 try {
                     await fs.rm(srcPath, { recursive: true, force: true });
@@ -992,7 +983,7 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
             }
         } else {
             counter.value++;
-            if (onFileProgress) onFileProgress(item, counter.value, totalFiles);
+            if (onFileProgress) onFileProgress(item, counter.value, 0);
             if (move) {
                 try {
                     await fs.rename(srcPath, destPath);
@@ -1011,17 +1002,17 @@ async function transferManagedItems(src, dest, managedItems, move = false, onFil
     }
 }
 
-async function copyDirWithProgress(src, dest, instanceRoot, counter, totalFiles, onFileProgress) {
+async function copyDirWithProgress(src, dest, instanceRoot, counter, onFileProgress) {
     await fs.mkdir(dest, { recursive: true });
     for (const entry of await fs.readdir(src, { withFileTypes: true })) {
         const srcPath = path.join(src, entry.name);
         const destPath = path.join(dest, entry.name);
         if (entry.isDirectory()) {
-            await copyDirWithProgress(srcPath, destPath, instanceRoot, counter, totalFiles, onFileProgress);
+            await copyDirWithProgress(srcPath, destPath, instanceRoot, counter, onFileProgress);
         } else {
             counter.value++;
             const relPath = path.relative(instanceRoot, srcPath).replace(/\\/g, '/');
-            if (onFileProgress) onFileProgress(relPath, counter.value, totalFiles);
+            if (onFileProgress) onFileProgress(relPath, counter.value, 0);
             await fs.copyFile(srcPath, destPath);
         }
     }
@@ -1042,9 +1033,8 @@ async function postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonP
         isSyncing = true;
         mainWindow.webContents.send('launch-status', `Syncing data for ${instanceName}...`);
         const instancePath = path.join(INSTANCES_DIR, instanceName);
-        await transferManagedItems(localAppDataPath, instancePath, managedItems, true, (file, current, total) => {
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            mainWindow.webContents.send('launch-status', `Syncing ${instanceName} (${file}) — ${pct}% (${current}/${total})`);
+        await transferManagedItems(localAppDataPath, instancePath, managedItems, true, (file, current) => {
+            mainWindow.webContents.send('launch-status', `Syncing ${instanceName} (${file}) — ${current} files`);
         });
         if (await fs.access(infoJsonPath).then(() => true).catch(() => false)) {
             await fs.unlink(infoJsonPath);

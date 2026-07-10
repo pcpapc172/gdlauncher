@@ -83,11 +83,10 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Progress:</strong> detailed file-level transfer progress with full paths and file counts</li>
-    <li><strong>Log Console:</strong> restored live terminal output with enable toggle in settings</li>
-    <li><strong>Sync:</strong> post-game sync now shows same detailed progress as launch</li>
-    <li><strong>Cleanup:</strong> removed unused dependencies and dead backup code</li>
-    <li><strong>Fixes:</strong> fixed IPC mismatches, undefined instances, and launch path resolution</li>
+    <li><strong>Performance:</strong> instance list loads instantly — sizes calculated in background</li>
+    <li><strong>Performance:</strong> file transfer uses single-pass copy instead of count-then-copy</li>
+    <li><strong>Performance:</strong> replaced psList with native tasklist/pgrep for faster process monitoring</li>
+    <li><strong>Cleanup:</strong> removed ps-list and plist dependencies</li>
 </ul>
 <p><em>pcpapc172</em></p>
 `;
@@ -306,7 +305,19 @@ function setLogStatus(running) {
     }
 }
 
-async function refreshInstances() { try { instances = await window.electron.getInstances(); renderInstances(); } catch (e) { console.error(e); } }
+async function refreshInstances() {
+    try {
+        instances = await window.electron.getInstances();
+        renderInstances();
+        window.electron.calculateInstanceSizes().then(sizes => {
+            sizes.forEach(s => {
+                const inst = instances.find(i => i.name === s.name);
+                if (inst) inst.size = s.size;
+            });
+            renderInstances();
+        });
+    } catch (e) { console.error(e); }
+}
 function renderInstances() {
     const tbody = instanceList;
     tbody.innerHTML = '';
