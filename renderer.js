@@ -86,6 +86,7 @@ const LATEST_CHANGELOG = `
     <li><strong>Progress:</strong> detailed file-level transfer progress with full paths and file counts</li>
     <li><strong>Log Console:</strong> restored live terminal output with enable toggle in settings</li>
     <li><strong>Sync:</strong> post-game sync now shows same detailed progress as launch</li>
+    <li><strong>Cleanup:</strong> removed unused dependencies and dead backup code</li>
     <li><strong>Fixes:</strong> fixed IPC mismatches, undefined instances, and launch path resolution</li>
 </ul>
 <p><em>pcpapc172</em></p>
