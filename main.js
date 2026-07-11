@@ -813,7 +813,7 @@ async function launchGame(instanceName) {
         // Deploy geode log mod if advanced logging is enabled
         if (settings.enable_geode_logging && data.isGeodeCompatible) {
             startLogPipe();
-            const deployed = await deployGeodeLogMod(instancePath);
+            const deployed = await deployGeodeLogMod(versionPath);
             if (deployed) {
                 mainWindow.webContents.send('launch-status', 'Deployed geode log mod');
             }
@@ -1201,8 +1201,13 @@ async function postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonP
         }
         // Remove geode log mod after game closes
         if (settings.enable_geode_logging) {
-            const instancePath = path.join(INSTANCES_DIR, instanceName);
-            await removeGeodeLogMod(instancePath);
+            let cleanupVersionPath;
+            if (data.versionType === 'local') {
+                cleanupVersionPath = path.join(VERSIONS_DIR, data.version);
+            } else {
+                cleanupVersionPath = data.executablePath;
+            }
+            await removeGeodeLogMod(cleanupVersionPath);
         }
         if (settings.close_behavior === 'Close After Game Ends') app.quit();
         else {
