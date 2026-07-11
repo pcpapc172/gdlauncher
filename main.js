@@ -157,26 +157,34 @@ function createConsoleWindow() {
  = *=========================== */
 
 let logPipeServer = null;
+let logPipeConnections = [];
 const GEODE_MOD_SOURCE = path.join(app.getPath('userData'), 'geode-log-mod');
 const GEODE_MOD_FILE = path.join(GEODE_MOD_SOURCE, 'pcpapc172.gdlauncher-log.geode');
 const PIPE_NAME = '\\\\.\\pipe\\gdlauncher-log';
 
 function startLogPipe() {
     if (logPipeServer) return;
+
     logPipeServer = net.createServer((socket) => {
-        broadcastLog('[log] Geode mod connected');
+        broadcastLog('[log] Geode mod connected to pipe');
+        logPipeConnections.push(socket);
         socket.on('data', (data) => {
             const lines = data.toString().split('\n').filter(l => l.trim());
             lines.forEach(line => broadcastLog(line));
         });
-        socket.on('error', () => {});
+        socket.on('error', (err) => {
+            broadcastLog(`[log] Pipe connection error: ${err.message}`);
+        });
         socket.on('end', () => {
-            broadcastLog('[log] Geode mod disconnected');
+            broadcastLog('[log] Geode mod disconnected from pipe');
+            logPipeConnections = logPipeConnections.filter(s => s !== socket);
         });
     });
+
     logPipeServer.on('error', (err) => {
+        broadcastLog(`[log] Pipe server error: ${err.code} - ${err.message}`);
         if (err.code === 'EADDRINUSE') {
-            broadcastLog('[log] Pipe already in use, attempting to close existing...');
+            broadcastLog('[log] Pipe already in use, retrying...');
             setTimeout(() => {
                 logPipeServer.close();
                 logPipeServer = null;
@@ -184,6 +192,11 @@ function startLogPipe() {
             }, 1000);
         }
     });
+
+    logPipeServer.on('listening', () => {
+        broadcastLog('[log] Named pipe server listening on \\\\.\\pipe\\gdlauncher-log');
+    });
+
     logPipeServer.listen(PIPE_NAME, () => {
         broadcastLog('[log] Log pipe server started');
     });
