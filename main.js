@@ -675,22 +675,42 @@ async function getVersionsWithSizes() {
 async function fetchRemoteVersions() {
     try {
         const response = await axios.get('http://api.pcpapc172.ir/archive/versions.json');
-        return response.data;
+        const remoteVersions = response.data;
+
+        for (const version of remoteVersions) {
+            const versionPath = path.join(VERSIONS_DIR, version.path);
+            version.isInstalled = await fs.access(versionPath).then(() => true).catch(() => false);
+            version.size = 'Calculating...';
+        }
+
+        return remoteVersions;
     } catch (error) {
         console.error('Error fetching remote versions:', error);
-        throw error;
+        return [];
     }
 }
 
 async function calculateAllVersionSizes(versions) {
     const results = [];
     for (const version of versions) {
-        const versionPath = path.join(VERSIONS_DIR, version.path || `${version.category}/${version.version}`);
-        const exists = await fs.access(versionPath).then(() => true).catch(() => false);
-
-        if (exists) {
-            const size = await getItemSize(versionPath);
-            results.push({ id: version.id, size });
+        if (version.isInstalled) {
+            const versionPath = path.join(VERSIONS_DIR, version.path);
+            const sizeBytes = await getItemSize(versionPath);
+            const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+            results.push({ id: version.id, size: `${sizeMB} MB` });
+        } else if (version.url) {
+            try {
+                const headResponse = await axios.head(version.url, { timeout: 3000 });
+                const sizeBytes = parseInt(headResponse.headers['content-length']);
+                if (sizeBytes) {
+                    const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2);
+                    results.push({ id: version.id, size: `${sizeMB} MB` });
+                } else {
+                    results.push({ id: version.id, size: 'Unknown' });
+                }
+            } catch (e) {
+                results.push({ id: version.id, size: 'Unknown' });
+            }
         }
     }
     return results;
@@ -701,11 +721,10 @@ async function downloadVersion(version) {
         mainWindow.webContents.send('download-start', { id: version.id });
         mainWindow.webContents.send('launch-status', `Downloading ${version.id}...`);
 
-        const versionPath = version.path || `${version.category}/${version.version}`;
         const downloadPath = path.join(app.getPath('temp'), `${version.id.replace('/', '_')}.zip`);
-        const extractPath = path.join(VERSIONS_DIR, versionPath);
+        const extractPath = path.join(VERSIONS_DIR, version.path);
 
-        await fs.mkdir(path.join(VERSIONS_DIR, version.category), { recursive: true });
+        await fs.mkdir(path.join(VERSIONS_DIR, version.path.split('/')[0]), { recursive: true });
 
         const dl = new EasyDl(version.url, downloadPath, {
             connections: 6,
@@ -716,6 +735,7 @@ async function downloadVersion(version) {
             if (total.percentage) {
                 mainWindow.webContents.send('download-progress', {
                     id: version.id,
+                    status: `Downloading... ${Math.floor(total.percentage)}%`,
                     percentage: total.percentage
                 });
             }
@@ -723,7 +743,7 @@ async function downloadVersion(version) {
 
         await dl.wait();
 
-        mainWindow.webContents.send('launch-status', `Extracting ${version.id}...`);
+        mainWindow.webContents.send('download-progress', { id: version.id, status: 'Extracting...', percentage: 100 });
 
         if (await fs.access(extractPath).then(() => true).catch(() => false)) {
             await fs.rm(extractPath, { recursive: true, force: true });

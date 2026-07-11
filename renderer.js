@@ -267,17 +267,17 @@ function setupLaunchListeners() {
     window.electron.onDownloadComplete((data) => {
         const card = document.querySelector(`.version-card[data-id="${data.id}"]`);
         if (!card) return;
-        
+
         if (data.success) {
             showNotification('Download complete!', 'success');
-            setTimeout(() => openDownloadsModal(), 500); // Refresh to show new state
+            setTimeout(() => openDownloadsModal(), 500);
         } else {
             const progress = card.querySelector('.version-progress');
             if(progress) progress.remove();
-            
+
             const actionsDiv = card.querySelector('.version-actions');
-            actionsDiv.innerHTML = '<button class="version-btn download" onclick="handleDownloadVersion(...)">⬇️ Retry</button>';
-            
+            actionsDiv.innerHTML = `<button class="version-btn download" onclick="handleDownloadVersion('${data.id}')">⬇️ Retry</button>`;
+
             showNotification('Download failed', 'error');
         }
     });
@@ -556,38 +556,27 @@ async function openDownloadsModal() {
     }
 }
 
+let versionDataMap = {};
+
 function renderDownloadsList(versions) {
-    console.log('=== RENDER DOWNLOADS LIST ===');
-    console.log('Total versions:', versions.length);
-    console.log('First version example:', versions[0]);
-    
     const statsEl = getElem('version-stats');
     const listEl = getElem('download-list');
-    
+
+    // Store version data globally for onclick handlers
+    versions.forEach(v => { versionDataMap[v.id] = v; });
+
     // Calculate stats
     const installed = versions.filter(v => v.isInstalled).length;
     const available = versions.length - installed;
     const totalSize = versions.filter(v => v.isInstalled).reduce((acc, v) => {
-        console.log('Processing version:', v.name, 'Size:', v.size, 'Installed:', v.isInstalled);
-        if (!v.size) {
-            console.log('  → No size property found');
-            return acc;
-        }
-        // Extract number from strings like "145 MB", "1.2 GB", etc.
+        if (!v.size || v.size === 'Calculating...' || v.size === 'Unknown') return acc;
         const match = v.size.match(/(\d+(\.\d+)?)\s*(MB|GB)?/i);
-        if (!match) {
-            console.log('  → Size format not recognized:', v.size);
-            return acc;
-        }
+        if (!match) return acc;
         let size = parseFloat(match[1]);
-        console.log('  → Parsed size:', size, match[3] || 'MB');
-        // Convert GB to MB if needed
         if (match[3] && match[3].toUpperCase() === 'GB') size *= 1024;
-        console.log('  → Final size (MB):', size);
         return acc + size;
     }, 0);
-    console.log('TOTAL SIZE CALCULATED:', totalSize, 'MB');
-    // Render stats
+
     statsEl.innerHTML = `
         <div class="stat-card">
             <div class="stat-icon blue">📦</div>
@@ -611,17 +600,16 @@ function renderDownloadsList(versions) {
             </div>
         </div>
     `;
-    
-    // Render version cards
+
     if(versions.length === 0) {
         listEl.innerHTML = '<div class="downloads-empty"><div class="downloads-empty-icon">📭</div><p>No versions available</p></div>';
         return;
     }
-    
+
     listEl.innerHTML = versions.map(v => {
         const downloading = document.querySelector(`.version-card[data-id="${v.id}"]`)?.querySelector('.version-progress');
         const progressHTML = downloading ? downloading.outerHTML : '';
-        
+
         return `
             <div class="version-card ${v.isInstalled ? 'installed' : ''}" data-id="${v.id}">
                 <div class="version-card-header">
@@ -633,31 +621,20 @@ function renderDownloadsList(versions) {
                         ${v.isInstalled ? '✓ Installed' : 'Available'}
                     </span>
                 </div>
-                
                 <div class="version-meta">
                     <div class="version-meta-item">
                         <span>💾</span>
                         <span>${v.size || 'Size unknown'}</span>
                     </div>
                 </div>
-                
                 ${progressHTML}
-                
                 <div class="version-actions">
                     ${v.isInstalled ? `
-                        <button class="version-btn repair" onclick="handleRepairVersion('${v.id}', ${JSON.stringify(v).replace(/"/g, '&quot;')})">
-                            🔧 Repair
-                        </button>
-                        <button class="version-btn delete" onclick="handleDeleteVersion('${v.path}', '${v.id}')">
-                            🗑️ Delete
-                        </button>
-                        <button class="version-btn folder" onclick="handleOpenVersionFolder('${v.path}')" title="Open Folder">
-                            📁
-                        </button>
+                        <button class="version-btn repair" onclick="handleRepairVersion('${v.id}')">🔧 Repair</button>
+                        <button class="version-btn delete" onclick="handleDeleteVersion('${v.path}', '${v.id}')">🗑️ Delete</button>
+                        <button class="version-btn folder" onclick="handleOpenVersionFolder('${v.path}')" title="Open Folder">📁</button>
                     ` : `
-                        <button class="version-btn download" onclick="handleDownloadVersion(${JSON.stringify(v).replace(/"/g, '&quot;')})">
-                            ⬇️ Download
-                        </button>
+                        <button class="version-btn download" onclick="handleDownloadVersion('${v.id}')">⬇️ Download</button>
                     `}
                 </div>
             </div>
@@ -665,36 +642,37 @@ function renderDownloadsList(versions) {
     }).join('');
 }
 
-function handleDownloadVersion(version) {
-    const card = document.querySelector(`.version-card[data-id="${version.id}"]`);
+function handleDownloadVersion(id) {
+    const version = versionDataMap[id];
+    if (!version) return;
+    const card = document.querySelector(`.version-card[data-id="${id}"]`);
     const actionsDiv = card.querySelector('.version-actions');
-    
-    // Add progress bar
+
     actionsDiv.insertAdjacentHTML('beforebegin', `
         <div class="version-progress">
             <div class="version-progress-bar" style="width: 0%"></div>
         </div>
     `);
-    
+
     actionsDiv.innerHTML = '<button class="version-btn download" disabled>⏳ Downloading...</button>';
-    
     window.electron.downloadVersion(version);
 }
 
-function handleRepairVersion(id, version) {
+function handleRepairVersion(id) {
+    const version = versionDataMap[id];
+    if (!version) return;
     if(!confirm(`Repair ${version.name}?\n\nThis will re-download and overwrite existing files.`)) return;
-    
+
     const card = document.querySelector(`.version-card[data-id="${id}"]`);
     const actionsDiv = card.querySelector('.version-actions');
-    
+
     actionsDiv.insertAdjacentHTML('beforebegin', `
         <div class="version-progress">
             <div class="version-progress-bar" style="width: 0%"></div>
         </div>
     `);
-    
+
     actionsDiv.innerHTML = '<button class="version-btn repair" disabled>🔧 Repairing...</button>';
-    
     window.electron.repairVersion(version);
 }
 
