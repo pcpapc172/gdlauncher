@@ -30,8 +30,7 @@ const DEFAULT_SETTINGS = {
     close_behavior: 'Stay Open',
     sync_delay: 5,
     last_run_version: null,
-    enable_log_output: false,
-    enable_geode_logging: false
+    enable_log_output: false
 };
 
 app.whenReady().then(async () => {
@@ -209,14 +208,21 @@ function stopLogPipe() {
     }
 }
 
-async function deployGeodeLogMod(instancePath) {
+async function deployGeodeLogMod(versionPath, downloadUrl) {
     try {
-        const exists = await fs.access(GEODE_MOD_FILE).then(() => true).catch(() => false);
-        if (!exists) return false;
-
-        const geodeModsDir = path.join(instancePath, 'geode', 'mods');
+        const geodeModsDir = path.join(versionPath, 'geode', 'mods');
         await fs.mkdir(geodeModsDir, { recursive: true });
-        await fs.copyFile(GEODE_MOD_FILE, path.join(geodeModsDir, 'pcpapc172.gdlauncher-log.geode'));
+        const destPath = path.join(geodeModsDir, 'pcpapc172.gdlauncher-log.geode');
+
+        // Check if already downloaded
+        const exists = await fs.access(destPath).then(() => true).catch(() => false);
+        if (exists) return true;
+
+        if (!downloadUrl) return false;
+
+        // Download from GitHub
+        const response = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+        await fs.writeFile(destPath, Buffer.from(response.data));
         return true;
     } catch (err) {
         console.error('Failed to deploy geode log mod:', err);
@@ -273,6 +279,15 @@ function setupIpcHandlers() {
     ipcMain.handle('save-settings', async (event, settings) => { try { await fs.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 4)); return true; } catch (error) { return false; } });
     ipcMain.handle('get-instances', async () => getInstances());
     ipcMain.handle('calculate-instance-sizes', async () => calculateInstanceSizes());
+    ipcMain.handle('fetch-log-mod-versions', async () => {
+        try {
+            const response = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher-log/releases');
+            return response.data;
+        } catch (error) {
+            console.error('Failed to fetch log mod versions:', error);
+            return [];
+        }
+    });
     ipcMain.handle('create-instance', async (event, data) => createInstance(data));
     ipcMain.handle('edit-instance', async (event, originalName, data) => editInstance(originalName, data));
     ipcMain.handle('delete-instance', async (event, name) => deleteInstance(name));
@@ -824,11 +839,19 @@ async function launchGame(instanceName) {
         const syncDelay = (settings.sync_delay || 5) * 1000;
 
         // Deploy geode log mod if advanced logging is enabled
-        if (settings.enable_geode_logging && data.isGeodeCompatible) {
+        if (data.enableGeodeLogging && data.isGeodeCompatible && data.geodeLogModVersion) {
             startLogPipe();
-            const deployed = await deployGeodeLogMod(versionPath);
-            if (deployed) {
-                mainWindow.webContents.send('launch-status', 'Deployed geode log mod');
+            try {
+                const releases = await axios.get('https://api.github.com/repos/pcpapc172/gdlauncher-log/releases/tags/' + data.geodeLogModVersion);
+                const asset = releases.data.assets.find(a => a.name.endsWith('.geode'));
+                if (asset) {
+                    const deployed = await deployGeodeLogMod(versionPath, asset.browser_download_url);
+                    if (deployed) {
+                        mainWindow.webContents.send('launch-status', 'Deployed geode log mod');
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch log mod release:', err);
             }
         }
 
@@ -1213,7 +1236,7 @@ async function postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonP
             await fs.unlink(infoJsonPath);
         }
         // Remove geode log mod after game closes
-        if (settings.enable_geode_logging) {
+        if (data.enableGeodeLogging) {
             let cleanupVersionPath;
             if (data.versionType === 'local') {
                 cleanupVersionPath = path.join(VERSIONS_DIR, data.version);

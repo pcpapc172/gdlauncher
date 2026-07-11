@@ -43,7 +43,11 @@ const saveFolderInput = getElem('save-folder');
 const geodeCheckbox = getElem('geode-compatible');
 const megahackCheckbox = getElem('use-megahack');
 const steamEmuCheckbox = getElem('use-steam-emu');
-const skipRestartCheckbox = getElem('skip-restart-check'); 
+const skipRestartCheckbox = getElem('skip-restart-check');
+const geodeLogSection = getElem('geode-log-section');
+const geodeLogCheckbox = getElem('enable-geode-logging');
+const geodeLogVersionSection = getElem('geode-log-version-section');
+const geodeLogVersionSelect = getElem('geode-log-version');
 const downloadList = getElem('download-list');
 const editorInstanceSelect = getElem('editor-instance-select');
 const editorLevelsList = getElem('editor-levels-list');
@@ -83,7 +87,7 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Geode Logging:</strong> advanced logging mod forwards Geode logs to launcher via named pipe</li>
+    <li><strong>Geode Logging:</strong> per-instance advanced logging with version selector, downloaded from GitHub</li>
     <li><strong>Console:</strong> log output can be opened in a separate persistent window</li>
     <li><strong>Restart:</strong> game restarts are now properly detected and monitored</li>
     <li><strong>Performance:</strong> instance list loads instantly, single-pass file transfer, native process checking</li>
@@ -121,8 +125,6 @@ async function loadSettings() {
         if(delayInput) delayInput.value = currentSettings.sync_delay !== undefined ? currentSettings.sync_delay : 5;
         const logCheckbox = getElem('enable-log-output');
         if(logCheckbox) logCheckbox.checked = currentSettings.enable_log_output || false;
-        const geodeLogCheckbox = getElem('enable-geode-logging');
-        if(geodeLogCheckbox) geodeLogCheckbox.checked = currentSettings.enable_geode_logging || false;
     } catch (e) {
         currentSettings = { theme: 'Dark', close_behavior: 'Stay Open', sync_delay: 5 };
         applyTheme('Dark');
@@ -163,6 +165,10 @@ function setupEventListeners() {
     }
     
     document.querySelectorAll('input[name="version-type"]').forEach(radio => radio.addEventListener('change', updateVersionTypeUI));
+    geodeCheckbox.addEventListener('change', updateGeodeLogUI);
+    geodeLogCheckbox.addEventListener('change', () => {
+        geodeLogVersionSection.style.display = geodeLogCheckbox.checked ? 'block' : 'none';
+    });
     getElem('browse-btn').addEventListener('click', browseForExe);
     getElem('save-instance-btn').addEventListener('click', saveInstance);
     getElem('cancel-instance-btn').addEventListener('click', () => instanceModal.classList.remove('active'));
@@ -386,26 +392,35 @@ async function openInstanceModal(edit) {
         instanceNameInput.value = inst.name;
         const isLocal = (inst.data.versionType || 'local') === 'local';
         document.querySelector(`input[name="version-type"][value="${isLocal?'local':'custom'}"]`).checked = true;
-        if(isLocal) localVersionSelect.value = inst.data.version || ''; 
+        if(isLocal) localVersionSelect.value = inst.data.version || '';
         else exePathInput.value = inst.data.executablePath || '';
         saveFolderInput.value = inst.data.saveFolderName || '';
         geodeCheckbox.checked = inst.data.isGeodeCompatible || false;
         megahackCheckbox.checked = inst.data.useMegaHack || false;
         steamEmuCheckbox.checked = inst.data.useSteamEmu || false;
         skipRestartCheckbox.checked = inst.data.skipRestartCheck || false;
+        geodeLogCheckbox.checked = inst.data.enableGeodeLogging || false;
+        updateGeodeLogUI();
+        if (geodeLogCheckbox.checked) {
+            geodeLogVersionSection.style.display = 'block';
+            await fetchLogModVersions();
+            geodeLogVersionSelect.value = inst.data.geodeLogModVersion || '';
+        }
     } else {
-        editingInstanceName = null; 
-        instanceNameInput.value = ''; 
-        localVersionSelect.value = ''; 
+        editingInstanceName = null;
+        instanceNameInput.value = '';
+        localVersionSelect.value = '';
         exePathInput.value = '';
-        saveFolderInput.value = 'GeometryDash'; 
-        geodeCheckbox.checked = false; 
-        megahackCheckbox.checked = false; 
+        saveFolderInput.value = 'GeometryDash';
+        geodeCheckbox.checked = false;
+        megahackCheckbox.checked = false;
         steamEmuCheckbox.checked = false;
         skipRestartCheckbox.checked = false;
+        geodeLogCheckbox.checked = false;
         document.querySelector('input[name="version-type"][value="local"]').checked = true;
     }
     updateVersionTypeUI();
+    updateGeodeLogUI();
     instanceModal.classList.add('active');
 }
 function updateVersionTypeUI() {
@@ -413,6 +428,32 @@ function updateVersionTypeUI() {
     getElem('local-version-section').style.display = isLocal ? 'block' : 'none';
     getElem('custom-exe-section').style.display = isLocal ? 'none' : 'block';
     if(!isEditMode && isLocal) saveFolderInput.value = 'GeometryDash';
+}
+function updateGeodeLogUI() {
+    const show = geodeCheckbox.checked;
+    geodeLogSection.style.display = show ? 'block' : 'none';
+    if (!show) {
+        geodeLogCheckbox.checked = false;
+        geodeLogVersionSection.style.display = 'none';
+    }
+}
+async function fetchLogModVersions() {
+    try {
+        const versions = await window.electron.fetchLogModVersions();
+        geodeLogVersionSelect.innerHTML = '<option value="">Select version...</option>';
+        versions.forEach(v => {
+            const asset = v.assets.find(a => a.name.endsWith('.geode'));
+            if (asset) {
+                const opt = document.createElement('option');
+                opt.value = v.tag_name;
+                opt.textContent = `${v.tag_name} — ${new Date(v.published_at).toLocaleDateString()}`;
+                opt.dataset.url = asset.browser_download_url;
+                geodeLogVersionSelect.appendChild(opt);
+            }
+        });
+    } catch (e) {
+        geodeLogVersionSelect.innerHTML = '<option value="">Failed to load versions</option>';
+    }
 }
 async function browseForExe() { 
     const f = await window.electron.openFileDialog(); 
@@ -428,14 +469,16 @@ async function saveInstance() {
     const name = instanceNameInput.value.trim();
     if (!name) { showNotification('Invalid name.', 'error'); return; }
     const versionType = document.querySelector('input[name="version-type"]:checked').value;
-    const data = { 
-        name, 
-        versionType, 
-        saveFolderName: saveFolderInput.value.trim(), 
-        isGeodeCompatible: geodeCheckbox.checked, 
-        useMegaHack: megahackCheckbox.checked, 
+    const data = {
+        name,
+        versionType,
+        saveFolderName: saveFolderInput.value.trim(),
+        isGeodeCompatible: geodeCheckbox.checked,
+        useMegaHack: megahackCheckbox.checked,
         useSteamEmu: steamEmuCheckbox.checked,
-        skipRestartCheck: skipRestartCheckbox.checked
+        skipRestartCheck: skipRestartCheckbox.checked,
+        enableGeodeLogging: geodeLogCheckbox.checked,
+        geodeLogModVersion: geodeLogVersionSelect.value || ''
     };
     if (versionType === 'local') {
         if (!localVersionSelect.value) { showNotification('Select version.', 'error'); return; }
@@ -467,8 +510,7 @@ async function saveSettings() {
     let syncDelay = parseInt(getElem('sync-delay').value);
     if(isNaN(syncDelay)) syncDelay = 5;
     const enableLog = getElem('enable-log-output') ? getElem('enable-log-output').checked : false;
-    const enableGeodeLog = getElem('enable-geode-logging') ? getElem('enable-geode-logging').checked : false;
-    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, enable_log_output: enableLog, enable_geode_logging: enableGeodeLog, last_run_version: appVersion };
+    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, enable_log_output: enableLog, last_run_version: appVersion };
     applyTheme(theme);
     await window.electron.saveSettings(currentSettings);
     settingsModal.classList.remove('active');

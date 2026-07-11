@@ -1,6 +1,6 @@
 {
   "name": "gd-instance-launcher",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "Game Instance Launcher for Geometry Dash",
   "homepage": "https://github.com/pcpapc172/gdlauncher",
   "main": "main.js",

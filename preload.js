@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electron', {
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   getInstances: () => ipcRenderer.invoke('get-instances'),
   calculateInstanceSizes: () => ipcRenderer.invoke('calculate-instance-sizes'),
+  fetchLogModVersions: () => ipcRenderer.invoke('fetch-log-mod-versions'),
   createInstance: (data) => ipcRenderer.invoke('create-instance', data),
   editInstance: (originalName, data) => ipcRenderer.invoke('edit-instance', originalName, data),
   deleteInstance: (name) => ipcRenderer.invoke('delete-instance', name),
