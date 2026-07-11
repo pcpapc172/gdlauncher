@@ -3,7 +3,9 @@ let logBuffer = [];
 const LOG_BUFFER_MAX = 2000;
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const { spawn, execSync } = require('child_process');
+const net = require('net');
 const os = require('os');
 const axios = require('axios');
 const decompress = require('decompress');
@@ -28,7 +30,8 @@ const DEFAULT_SETTINGS = {
     close_behavior: 'Stay Open',
     sync_delay: 5,
     last_run_version: null,
-    enable_log_output: false
+    enable_log_output: false,
+    enable_geode_logging: false
 };
 
 app.whenReady().then(async () => {
@@ -147,6 +150,76 @@ function createConsoleWindow() {
     consoleWindow.setMenuBarVisibility(false);
     consoleWindow.loadFile('console.html');
     consoleWindow.on('closed', () => { consoleWindow = null; });
+}
+
+/* ============================
+ *  GEODE LOG PIPE
+ = *=========================== */
+
+let logPipeServer = null;
+const GEODE_MOD_SOURCE = path.join(app.getPath('userData'), 'geode-log-mod');
+const GEODE_MOD_FILE = path.join(GEODE_MOD_SOURCE, 'pcpapc172.gdlauncher-log.geode');
+const PIPE_NAME = '\\\\.\\pipe\\gdlauncher-log';
+
+function startLogPipe() {
+    if (logPipeServer) return;
+    logPipeServer = net.createServer((socket) => {
+        broadcastLog('[log] Geode mod connected');
+        socket.on('data', (data) => {
+            const lines = data.toString().split('\n').filter(l => l.trim());
+            lines.forEach(line => broadcastLog(line));
+        });
+        socket.on('error', () => {});
+        socket.on('end', () => {
+            broadcastLog('[log] Geode mod disconnected');
+        });
+    });
+    logPipeServer.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            broadcastLog('[log] Pipe already in use, attempting to close existing...');
+            setTimeout(() => {
+                logPipeServer.close();
+                logPipeServer = null;
+                startLogPipe();
+            }, 1000);
+        }
+    });
+    logPipeServer.listen(PIPE_NAME, () => {
+        broadcastLog('[log] Log pipe server started');
+    });
+}
+
+function stopLogPipe() {
+    if (logPipeServer) {
+        logPipeServer.close();
+        logPipeServer = null;
+    }
+}
+
+async function deployGeodeLogMod(instancePath) {
+    try {
+        const exists = await fs.access(GEODE_MOD_FILE).then(() => true).catch(() => false);
+        if (!exists) return false;
+
+        const geodeModsDir = path.join(instancePath, 'geode', 'mods');
+        await fs.mkdir(geodeModsDir, { recursive: true });
+        await fs.copyFile(GEODE_MOD_FILE, path.join(geodeModsDir, 'pcpapc172.gdlauncher-log.geode'));
+        return true;
+    } catch (err) {
+        console.error('Failed to deploy geode log mod:', err);
+        return false;
+    }
+}
+
+async function removeGeodeLogMod(instancePath) {
+    try {
+        const modPath = path.join(instancePath, 'geode', 'mods', 'pcpapc172.gdlauncher-log.geode');
+        if (await fs.access(modPath).then(() => true).catch(() => false)) {
+            await fs.unlink(modPath);
+        }
+    } catch (err) {
+        console.error('Failed to remove geode log mod:', err);
+    }
 }
 
 /* ============================
@@ -737,6 +810,15 @@ async function launchGame(instanceName) {
         const settings = await loadSettingsInternal();
         const syncDelay = (settings.sync_delay || 5) * 1000;
 
+        // Deploy geode log mod if advanced logging is enabled
+        if (settings.enable_geode_logging && data.isGeodeCompatible) {
+            startLogPipe();
+            const deployed = await deployGeodeLogMod(instancePath);
+            if (deployed) {
+                mainWindow.webContents.send('launch-status', 'Deployed geode log mod');
+            }
+        }
+
         logBuffer = [];
         if (settings.enable_log_output) {
             const pushLog = (line) => {
@@ -1116,6 +1198,11 @@ async function postLaunchCleanup(instanceName, data, localAppDataPath, infoJsonP
         });
         if (await fs.access(infoJsonPath).then(() => true).catch(() => false)) {
             await fs.unlink(infoJsonPath);
+        }
+        // Remove geode log mod after game closes
+        if (settings.enable_geode_logging) {
+            const instancePath = path.join(INSTANCES_DIR, instanceName);
+            await removeGeodeLogMod(instancePath);
         }
         if (settings.close_behavior === 'Close After Game Ends') app.quit();
         else {

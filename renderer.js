@@ -83,10 +83,10 @@ function hideNotification() {
 // --- CHANGELOG DATA ---
 const LATEST_CHANGELOG = `
 <ul class="changelog-list">
-    <li><strong>Console:</strong> log output can now be opened in a separate persistent window</li>
+    <li><strong>Geode Logging:</strong> advanced logging mod forwards Geode logs to launcher via named pipe</li>
+    <li><strong>Console:</strong> log output can be opened in a separate persistent window</li>
     <li><strong>Restart:</strong> game restarts are now properly detected and monitored</li>
     <li><strong>Performance:</strong> instance list loads instantly, single-pass file transfer, native process checking</li>
-    <li><strong>Cleanup:</strong> removed ps-list and plist dependencies</li>
 </ul>
 <p><em>pcpapc172</em></p>
 `;
@@ -121,6 +121,8 @@ async function loadSettings() {
         if(delayInput) delayInput.value = currentSettings.sync_delay !== undefined ? currentSettings.sync_delay : 5;
         const logCheckbox = getElem('enable-log-output');
         if(logCheckbox) logCheckbox.checked = currentSettings.enable_log_output || false;
+        const geodeLogCheckbox = getElem('enable-geode-logging');
+        if(geodeLogCheckbox) geodeLogCheckbox.checked = currentSettings.enable_geode_logging || false;
     } catch (e) {
         currentSettings = { theme: 'Dark', close_behavior: 'Stay Open', sync_delay: 5 };
         applyTheme('Dark');
@@ -465,7 +467,8 @@ async function saveSettings() {
     let syncDelay = parseInt(getElem('sync-delay').value);
     if(isNaN(syncDelay)) syncDelay = 5;
     const enableLog = getElem('enable-log-output') ? getElem('enable-log-output').checked : false;
-    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, enable_log_output: enableLog, last_run_version: appVersion };
+    const enableGeodeLog = getElem('enable-geode-logging') ? getElem('enable-geode-logging').checked : false;
+    currentSettings = { theme, close_behavior: closeBehavior, sync_delay: syncDelay, enable_log_output: enableLog, enable_geode_logging: enableGeodeLog, last_run_version: appVersion };
     applyTheme(theme);
     await window.electron.saveSettings(currentSettings);
     settingsModal.classList.remove('active');
