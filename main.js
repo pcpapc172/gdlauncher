@@ -701,8 +701,9 @@ async function downloadVersion(version) {
         mainWindow.webContents.send('download-start', { id: version.id });
         mainWindow.webContents.send('launch-status', `Downloading ${version.id}...`);
 
+        const versionPath = version.path || `${version.category}/${version.version}`;
         const downloadPath = path.join(app.getPath('temp'), `${version.id.replace('/', '_')}.zip`);
-        const extractPath = path.join(VERSIONS_DIR, version.category, version.version);
+        const extractPath = path.join(VERSIONS_DIR, versionPath);
 
         await fs.mkdir(path.join(VERSIONS_DIR, version.category), { recursive: true });
 
