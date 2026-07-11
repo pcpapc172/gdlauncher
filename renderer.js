@@ -381,7 +381,7 @@ async function openInstanceModal(edit) {
     isEditMode = edit; 
     modalTitle.textContent = edit ? 'Edit' : 'Create';
     const vers = await window.electron.getVersions();
-    localVersionSelect.innerHTML = '<option value="">Select...</option>' + vers.map(v => `<option value="${v}">${v}</option>`).join('');
+    localVersionSelect.innerHTML = '<option value="">Select...</option>' + vers.map(v => `<option value="${v.path}">${v.path}</option>`).join('');
     
     if(editSaveSection) editSaveSection.style.display = edit ? 'block' : 'none';
 
