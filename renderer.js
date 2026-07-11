@@ -166,8 +166,11 @@ function setupEventListeners() {
     
     document.querySelectorAll('input[name="version-type"]').forEach(radio => radio.addEventListener('change', updateVersionTypeUI));
     geodeCheckbox.addEventListener('change', updateGeodeLogUI);
-    geodeLogCheckbox.addEventListener('change', () => {
+    geodeLogCheckbox.addEventListener('change', async () => {
         geodeLogVersionSection.style.display = geodeLogCheckbox.checked ? 'block' : 'none';
+        if (geodeLogCheckbox.checked && geodeLogVersionSelect.options.length <= 1) {
+            await fetchLogModVersions();
+        }
     });
     getElem('browse-btn').addEventListener('click', browseForExe);
     getElem('save-instance-btn').addEventListener('click', saveInstance);
