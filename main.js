@@ -580,6 +580,10 @@ async function editInstance(originalName, data) {
             saveFolderName: data.saveFolderName,
             isGeodeCompatible: data.isGeodeCompatible,
             useMegaHack: data.useMegaHack,
+            useSteamEmu: data.useSteamEmu || false,
+            skipRestartCheck: data.skipRestartCheck || false,
+            enableGeodeLogging: data.enableGeodeLogging || false,
+            geodeLogModVersion: data.geodeLogModVersion || '',
             creationDate: data.creationDate
         };
 
